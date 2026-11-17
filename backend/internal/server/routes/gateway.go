@@ -226,6 +226,10 @@ func RegisterGatewayRoutes(
 			h.Gateway.Responses(c)
 		}))
 		gateway.POST("/alpha/search", textBodyLimit, h.OpenAIGateway.AlphaSearch)
+		for _, endpoint := range []string{"/completions", "/audio/speech", "/audio/transcriptions", "/audio/translations", "/moderations", "/rerank", "/decisions"} {
+			gateway.POST(endpoint, h.OpenAIGateway.NativeProtocol("/v1"+endpoint))
+		}
+
 		gateway.GET("/responses", func(c *gin.Context) {
 			h.OpenAIGateway.ResponsesWebSocket(c)
 		})
@@ -378,6 +382,10 @@ func RegisterGatewayRoutes(
 	rootRoute(http.MethodPost, "/responses", bodyLimit, responsesHandler)
 	rootRoute(http.MethodPost, "/responses/*subpath", bodyLimit, guardResponsesSubpath(responsesHandler))
 	rootRoute(http.MethodPost, "/alpha/search", textBodyLimit, h.OpenAIGateway.AlphaSearch)
+	for _, endpoint := range []string{"/completions", "/audio/speech", "/audio/transcriptions", "/audio/translations", "/moderations", "/rerank", "/decisions"} {
+		rootRoute(http.MethodPost, endpoint, bodyLimit, h.OpenAIGateway.NativeProtocol("/v1"+endpoint))
+	}
+
 	rootRoute(http.MethodGet, "/responses", bodyLimit, func(c *gin.Context) {
 		h.OpenAIGateway.ResponsesWebSocket(c)
 	})

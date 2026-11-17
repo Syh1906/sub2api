@@ -301,6 +301,9 @@ type OpenAIForwardResult struct {
 	// AudioUsage carries Voice billing units when present.
 	AudioUsage *AudioUsage
 
+	// NativePricing fixes the validated price card for native protocol accounting.
+	NativePricing *ResolvedPricing
+
 	wsReplayInput                []json.RawMessage
 	wsReplayInputExists          bool
 	wsAccountFailoverReplayInput []json.RawMessage

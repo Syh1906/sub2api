@@ -94,6 +94,11 @@ const openAILongContextBillingEnabledKey = "openai_long_context_billing_enabled"
 
 const (
 	OpenAIEndpointCapabilityChatCompletions OpenAIEndpointCapability = "chat_completions"
+	OpenAIEndpointCapabilityCompletions     OpenAIEndpointCapability = "completions"
+	OpenAIEndpointCapabilityAudio           OpenAIEndpointCapability = "audio"
+	OpenAIEndpointCapabilityModerations     OpenAIEndpointCapability = "moderations"
+	OpenAIEndpointCapabilityRerank          OpenAIEndpointCapability = "rerank"
+	OpenAIEndpointCapabilityDecisions       OpenAIEndpointCapability = "decisions"
 	OpenAIEndpointCapabilityEmbeddings      OpenAIEndpointCapability = "embeddings"
 	OpenAIEndpointCapabilityAlphaSearch     OpenAIEndpointCapability = "alpha_search"
 	OpenAIEndpointCapabilityLive            OpenAIEndpointCapability = "live"
@@ -1980,7 +1985,7 @@ func (a *Account) SupportsOpenAIEndpointCapability(capability OpenAIEndpointCapa
 		if a.Type != AccountTypeOAuth && a.Type != AccountTypeAPIKey {
 			return false
 		}
-	case OpenAIEndpointCapabilityEmbeddings:
+	case OpenAIEndpointCapabilityEmbeddings, OpenAIEndpointCapabilityCompletions, OpenAIEndpointCapabilityAudio, OpenAIEndpointCapabilityModerations, OpenAIEndpointCapabilityRerank, OpenAIEndpointCapabilityDecisions:
 		if a.Type != AccountTypeAPIKey {
 			return false
 		}

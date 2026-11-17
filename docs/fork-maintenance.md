@@ -19,7 +19,15 @@
 
 ## 自有功能与修复
 
-当前尚无本 fork 新增的业务功能或修复。上游继承能力不列为自有改动，待实现的计划不标记为已经支持。
+### 原生标准客户端端点（2026-11-18，未发布）
+
+- 新增旧版 Completions、标准音频、Moderations、Rerank 与 Decisions 的固定原生入口和根路径别名。复用客户身份、分组权限、并发、调度、余额与用量记账；不引入独立账本。
+- 音频上传保留文件字节，音频响应保留媒体类型。Completions 保留原生文本/流式结构。音频与审核要求明确按次价格，Token 计费要求合法上游用量；不默认免费或估算伪造用量。
+- 归属：`backend/internal/handler/openai_native_protocol.go`、`backend/internal/service/openai_native_protocol.go`、`openai_native_forward.go`，以及账号能力、路由和现有记账入口。无数据库迁移；接口与配置见[原生扩展协议](native-protocols.md)。
+- 定向验证通过：7 个端点的原生转发、Completions SSE 与截断、multipart 文件/模型映射、音频/文本媒体类型、无身份拒绝、根路径与 `/v1` 模型白名单、按 Token/按次价格和计费来源、缺失价格/用量拒绝、上游 400 保留。合成账务测试中两次独立执行各扣 0.25，余额缓存 100 → 99.5；重复客户端编号不能合并账单，队列溢出仍执行必要记账。
+- 验证使用 `GOMAXPROCS=2`、`go -C backend test -p=1 -tags=unit ./internal/service ./internal/handler ./internal/server/routes -run TestNativeProtocol` 及受影响的既有记账队列用例，使用合成上游和账务存储替身。没有真实模型/费用，也不把测试替身视为数据库整体联调。
+- 当前为开发分支，未发布、未部署。真实供应商、真实费用和运行镜像联调仍待验证。
+- 同步上游时逐项核对是否已提供等价端点，特别注意原生流式输出、multipart 模型映射、渠道价格来源、缺失用量处理和重复请求编号不能漏扣费。
 
 后续每项功能或修复记录以下内容：
 
