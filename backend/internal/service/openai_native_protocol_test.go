@@ -337,7 +337,7 @@ func TestNativeProtocolAudioRejectsPartialSuccessStatus(t *testing.T) {
 func TestNativeProtocolAudioReadIdle(t *testing.T) {
 	svc, account, key, req, c, rec, transport := nativeFixture(t, "/v1/audio/speech", `{"model":"alias","input":"hi","stream_format":"sse"}`, "text/event-stream", "", true)
 	reader, writer := io.Pipe()
-	defer writer.Close()
+	t.Cleanup(func() { require.NoError(t, writer.Close()) })
 	transport.resp.Body = reader
 	svc.cfg.Gateway.StreamDataIntervalTimeout = 1
 	delta := "data: {\"type\":\"speech.audio.delta\",\"audio\":\"YQ==\"}\n\n"

@@ -98,8 +98,8 @@ func (s *OpenAIGatewayService) streamNativeAudio(c *gin.Context, resp *http.Resp
 		var event strings.Builder
 		for scanner.Scan() {
 			line := scanner.Text()
-			event.WriteString(line)
-			event.WriteByte('\n')
+			_, _ = event.WriteString(line)
+			_ = event.WriteByte('\n')
 			frame, hasData := parser.AddLine(line)
 			if line != "" {
 				continue

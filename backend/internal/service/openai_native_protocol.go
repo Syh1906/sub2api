@@ -320,8 +320,12 @@ func nativeProtocolUsage(endpoint string, body []byte) (OpenAIUsage, bool) {
 		return OpenAIUsage{}, false
 	}
 
-	if endpoint == "/v1/completions" && (!(value.Get("prompt_tokens").Exists() || value.Get("input_tokens").Exists()) || !(value.Get("completion_tokens").Exists() || value.Get("output_tokens").Exists())) {
-		return OpenAIUsage{}, false
+	if endpoint == "/v1/completions" {
+		hasInput := value.Get("prompt_tokens").Exists() || value.Get("input_tokens").Exists()
+		hasOutput := value.Get("completion_tokens").Exists() || value.Get("output_tokens").Exists()
+		if !hasInput || !hasOutput {
+			return OpenAIUsage{}, false
+		}
 	}
 
 	found := false
