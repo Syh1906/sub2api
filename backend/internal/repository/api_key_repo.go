@@ -75,8 +75,8 @@ func (r *apiKeyRepository) Create(ctx context.Context, key *service.APIKey) erro
 }
 
 func (r *apiKeyRepository) GetByID(ctx context.Context, id int64) (*service.APIKey, error) {
-	m, err := r.activeQuery().
-		Where(apikey.IDEQ(id)).
+	m, err := clientFromContext(ctx, r.client).APIKey.Query().
+		Where(apikey.IDEQ(id), apikey.DeletedAtIsNil()).
 		WithUser().
 		WithGroup().
 		Only(ctx)
@@ -792,7 +792,7 @@ func (r *apiKeyRepository) IncrementQuotaUsedAndGetState(ctx context.Context, id
 		SET
 			quota_used = quota_used + $1,
 			status = CASE
-				WHEN quota > 0 AND quota_used + $1 >= quota THEN $2
+				WHEN status = $4 AND quota > 0 AND quota_used + $1 >= quota THEN $2
 				ELSE status
 			END,
 			updated_at = NOW()
@@ -801,7 +801,7 @@ func (r *apiKeyRepository) IncrementQuotaUsedAndGetState(ctx context.Context, id
 	`
 
 	state := &service.APIKeyQuotaUsageState{}
-	if err := scanSingleRow(ctx, r.sql, query, []any{amount, service.StatusAPIKeyQuotaExhausted, id}, &state.QuotaUsed, &state.Quota, &state.Key, &state.Status); err != nil {
+	if err := scanSingleRow(ctx, r.sql, query, []any{amount, service.StatusAPIKeyQuotaExhausted, id, service.StatusAPIKeyActive}, &state.QuotaUsed, &state.Quota, &state.Key, &state.Status); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, service.ErrAPIKeyNotFound
 		}

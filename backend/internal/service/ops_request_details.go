@@ -15,6 +15,7 @@ const (
 // OpsRequestDetail is a request-level view across success (usage_logs) and error (ops_error_logs).
 // It powers "request drilldown" UIs without exposing full request bodies for successful requests.
 type OpsRequestDetail struct {
+	RecordID  int64          `json:"-"`
 	Kind      OpsRequestKind `json:"kind"`
 	CreatedAt time.Time      `json:"created_at"`
 	RequestID string         `json:"request_id"`
@@ -42,8 +43,9 @@ type OpsRequestDetail struct {
 }
 
 type OpsRequestDetailFilter struct {
-	StartTime *time.Time
-	EndTime   *time.Time
+	CustomerView bool
+	StartTime    *time.Time
+	EndTime      *time.Time
 
 	// kind: success|error|all
 	Kind string

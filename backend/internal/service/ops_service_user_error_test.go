@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
+	"strings"
 	"testing"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
@@ -160,5 +162,39 @@ func TestGetUserErrorRequestDetail_InvalidID(t *testing.T) {
 	_, err = svc.GetUserErrorRequestDetail(context.Background(), 1, -5)
 	if err == nil {
 		t.Fatal("expected error for id=-5")
+	}
+}
+
+type requestScopeRepo struct {
+	OpsRepository
+	seen *OpsRequestDetailFilter
+}
+
+func (r *requestScopeRepo) ListRequestDetails(_ context.Context, f *OpsRequestDetailFilter) ([]*OpsRequestDetail, int64, error) {
+	r.seen = f
+	return []*OpsRequestDetail{{RecordID: 3, Kind: OpsRequestKindSuccess, RequestID: "visible", Message: "private-operator-message"}}, 1, nil
+}
+func TestListUserRequestsScopeAndVisibility(t *testing.T) {
+	repo := &requestScopeRepo{}
+	svc := &OpsService{opsRepo: repo}
+	other := int64(99)
+	f := OpsRequestDetailFilter{UserID: &other, Kind: "all"}
+	items, total, err := svc.ListUserRequests(context.Background(), 12, false, f)
+	if err != nil || total != 1 || len(items) != 1 || !repo.seen.CustomerView || *repo.seen.UserID != 12 || repo.seen.Kind != "success" {
+		t.Fatalf("unexpected scoped result: %v, %d, %v", items, total, err)
+	}
+	b, err := json.Marshal(items)
+	if err != nil || strings.Contains(string(b), "private-operator-message") || !strings.Contains(string(b), `"duration_ms":null`) {
+		t.Fatalf("unsafe or misleading result: %s, %v", b, err)
+	}
+	repo.seen = nil
+	f.Kind = "error"
+	_, total, err = svc.ListUserRequests(context.Background(), 12, false, f)
+	if err != nil || total != 0 || repo.seen != nil {
+		t.Fatal("hidden errors should have zero count")
+	}
+	_, _, err = svc.ListUserRequests(context.Background(), 0, true, f)
+	if err == nil || repo.seen != nil {
+		t.Fatal("missing owner must be rejected before querying")
 	}
 }

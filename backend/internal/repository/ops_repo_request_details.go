@@ -29,6 +29,15 @@ func (r *opsRepository) ListRequestDetails(ctx context.Context, filter *service.
 		args = append(args, values...)
 	}
 
+	modelColumn := "model"
+	requestColumn := "request_id"
+	errorScope := "COALESCE(o.status_code, 0) >= 400"
+	if filter != nil && filter.CustomerView {
+		modelColumn = "requested_model"
+		requestColumn = "customer_request_id"
+		errorScope = "(COALESCE(o.status_code, 0) >= 400 OR o.error_type = 'cyber_policy')"
+		addCondition("NOT count_tokens")
+	}
 	if filter != nil {
 		if kind := strings.TrimSpace(strings.ToLower(filter.Kind)); kind != "" && kind != "all" {
 			if kind != string(service.OpsRequestKindSuccess) && kind != string(service.OpsRequestKindError) {
@@ -55,10 +64,10 @@ func (r *opsRepository) ListRequestDetails(ctx context.Context, filter *service.
 		}
 
 		if model := strings.TrimSpace(filter.Model); model != "" {
-			addCondition(fmt.Sprintf("model = $%d", len(args)+1), model)
+			addCondition(fmt.Sprintf("%s = $%d", modelColumn, len(args)+1), model)
 		}
 		if requestID := strings.TrimSpace(filter.RequestID); requestID != "" {
-			addCondition(fmt.Sprintf("request_id = $%d", len(args)+1), requestID)
+			addCondition(fmt.Sprintf("%s = $%d", requestColumn, len(args)+1), requestID)
 		}
 		if q := strings.TrimSpace(filter.Query); q != "" {
 			like := "%" + strings.ToLower(q) + "%"
@@ -90,7 +99,11 @@ WITH combined AS (
     'success'::TEXT AS kind,
     ul.created_at AS created_at,
     ul.request_id AS request_id,
+    CASE WHEN starts_with(ul.request_id,'client:') THEN substr(ul.request_id,8) ELSE ul.request_id END AS customer_request_id,
     COALESCE(NULLIF(g.platform, ''), NULLIF(a.platform, ''), '') AS platform,
+    ul.id AS record_id,
+    false AS count_tokens,
+    COALESCE(NULLIF(ul.requested_model,''), ul.model) AS requested_model,
     ul.model AS model,
     ul.duration_ms AS duration_ms,
     ul.first_token_ms AS first_token_ms,
@@ -115,7 +128,11 @@ WITH combined AS (
     'error'::TEXT AS kind,
     o.created_at AS created_at,
     COALESCE(NULLIF(o.request_id,''), NULLIF(o.client_request_id,''), '') AS request_id,
+    COALESCE(NULLIF(o.client_request_id,''), o.request_id, '') AS customer_request_id,
     COALESCE(NULLIF(o.platform, ''), NULLIF(g.platform, ''), NULLIF(a.platform, ''), '') AS platform,
+    o.id AS record_id,
+    COALESCE(o.is_count_tokens,false) AS count_tokens,
+    COALESCE(NULLIF(o.requested_model,''), o.model) AS requested_model,
     o.model AS model,
     o.duration_ms AS duration_ms,
     o.time_to_first_token_ms AS first_token_ms,
@@ -133,7 +150,7 @@ WITH combined AS (
   LEFT JOIN groups g ON g.id = o.group_id
   LEFT JOIN accounts a ON a.id = o.account_id
   WHERE o.created_at >= $1 AND o.created_at < $2
-    AND COALESCE(o.status_code, 0) >= 400
+    AND ` + errorScope + `
 )
 `
 
@@ -161,14 +178,16 @@ WITH combined AS (
 		}
 	}
 
+	sort += ", kind ASC, record_id DESC"
 	listQuery := fmt.Sprintf(`
 %s
 SELECT
   kind,
+  record_id,
   created_at,
-  request_id,
+  %s,
   platform,
-  model,
+  %s,
   duration_ms,
   first_token_ms,
   status_code,
@@ -185,7 +204,7 @@ FROM combined
 %s
 %s
 LIMIT $%d OFFSET $%d
-`, cte, where, sort, len(args)+1, len(args)+2)
+`, cte, requestColumn, modelColumn, where, sort, len(args)+1, len(args)+2)
 
 	listArgs := append(append([]any{}, args...), pageSize, offset)
 	rows, err := r.db.QueryContext(ctx, listQuery, listArgs...)
@@ -212,6 +231,7 @@ LIMIT $%d OFFSET $%d
 	out := make([]*service.OpsRequestDetail, 0, pageSize)
 	for rows.Next() {
 		var (
+			recordID  int64
 			kind      string
 			createdAt time.Time
 			requestID sql.NullString
@@ -237,6 +257,7 @@ LIMIT $%d OFFSET $%d
 
 		if err := rows.Scan(
 			&kind,
+			&recordID,
 			&createdAt,
 			&requestID,
 			&platform,
@@ -258,6 +279,7 @@ LIMIT $%d OFFSET $%d
 		}
 
 		item := &service.OpsRequestDetail{
+			RecordID:  recordID,
 			Kind:      service.OpsRequestKind(kind),
 			CreatedAt: createdAt,
 			RequestID: strings.TrimSpace(requestID.String),

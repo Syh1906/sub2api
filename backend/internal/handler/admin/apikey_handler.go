@@ -24,6 +24,7 @@ func NewAdminAPIKeyHandler(adminService service.AdminService) *AdminAPIKeyHandle
 
 // AdminUpdateAPIKeyGroupRequest represents the request to update an API key.
 type AdminUpdateAPIKeyGroupRequest struct {
+	service.AdminAPIKeyAccess
 	GroupID             *int64 `json:"group_id"`               // nil=不修改, 0=解绑, >0=绑定到目标分组
 	ResetRateLimitUsage *bool  `json:"reset_rate_limit_usage"` // true=重置 5h/1d/7d 限速用量
 }
@@ -40,6 +41,22 @@ func (h *AdminAPIKeyHandler) UpdateGroup(c *gin.Context) {
 	var req AdminUpdateAPIKeyGroupRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+
+	if req.HasAccessFields() {
+		if req.GroupID != nil || (req.ResetRateLimitUsage != nil && *req.ResetRateLimitUsage) {
+			response.BadRequest(c, "Submit quota or status changes separately from group or rate limit changes")
+			return
+		}
+		key, err := h.adminService.AdminUpdateAPIKeyAccess(c.Request.Context(), keyID, req.AdminAPIKeyAccess)
+		if err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+		out := dto.APIKeyFromService(key)
+		out.Key = ""
+		response.Success(c, gin.H{"api_key": out, "access_updated": true, "auto_granted_group_access": false})
 		return
 	}
 

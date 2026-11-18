@@ -126,6 +126,8 @@ func ToUserErrorRequest(e *OpsErrorLog) *UserErrorRequest {
 // 仍严禁任何内部/敏感字段。
 type UserErrorRequestDetail struct {
 	UserErrorRequest
+	RequestID          string `json:"request_id,omitempty"`
+	DurationMs         *int64 `json:"duration_ms,omitempty"`
 	ErrorBody          string `json:"error_body"`
 	UpstreamStatusCode *int   `json:"upstream_status_code,omitempty"`
 }
@@ -136,8 +138,14 @@ func ToUserErrorRequestDetail(e *OpsErrorLogDetail) *UserErrorRequestDetail {
 		return nil
 	}
 	base := ToUserErrorRequest(&e.OpsErrorLog)
+	requestID := e.ClientRequestID
+	if requestID == "" {
+		requestID = e.RequestID
+	}
 	return &UserErrorRequestDetail{
 		UserErrorRequest:   *base,
+		RequestID:          requestID,
+		DurationMs:         e.DurationMs,
 		ErrorBody:          e.ErrorBody,
 		UpstreamStatusCode: e.UpstreamStatusCode,
 	}

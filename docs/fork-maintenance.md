@@ -19,6 +19,14 @@
 
 ## 自有功能与修复
 
+### 管理员 Key 额度、启停与用户请求记录（待发布）
+
+- 管理员通过既有 `PUT /api/v1/admin/api-keys/:id` 指定 `quota` 或正数 `quota_increase`，同时提交刚读取的 `expected_quota`。额度已变化时返回 409，客户端应重新读取。零总额度代表不限额，只有有限额度允许增量调整。启停使用 `status=active|inactive`。分组和限流重置沿用原接口，独立于额度调整。操作进入现有管理员审计。
+- 总额度变更与扣量按同一条 Key 记录串行保存，历史消耗保持原值。重新启用时重新判断有效期和剩余额度；额度、状态成功更新后清除该 Key 的鉴权缓存。
+- 已登录用户通过 `GET /api/v1/usage/requests` 查询自己的成功与失败记录。支持 `request_id` 精确匹配、日期、客户请求的模型、状态及分页，默认最近七天。列表以 `kind` 和 `id` 定位现有详情，时间相同的记录次序固定。失败记录继续遵循用户错误查看开关。没有采集耗时的记录返回空值。成功用量和失败日志各自沿用原有保留期限。
+- 本机候选源码已用两个隔离用户、PostgreSQL 和模拟模型服务验证。并发两次对同一基数加额只成功一次，停用、到期和额度耗尽均在实际模型入口拒绝；按响应头编号查询、同一时刻跨页、错误隐藏和跨用户详情检查通过。
+- 代码位于 `internal/service/admin_api_key_access.go`、`internal/handler/user_requests.go` 和 `internal/repository/ops_repo_request_details.go`（相对 `backend/`）。没有数据库迁移。
+
 ### 原生标准客户端端点（2026-11-18，v0.2.22-fork.1）
 
 - 新增旧版 Completions、标准音频、Moderations、Rerank 与 Decisions 的固定原生入口和根路径别名。复用客户身份、分组权限、并发、调度、余额与用量记账；不引入独立账本。

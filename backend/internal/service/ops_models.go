@@ -78,6 +78,7 @@ type OpsErrorLog struct {
 
 type OpsErrorLogDetail struct {
 	OpsErrorLog
+	DurationMs *int64 `json:"duration_ms,omitempty"`
 
 	ErrorBody string `json:"error_body"`
 

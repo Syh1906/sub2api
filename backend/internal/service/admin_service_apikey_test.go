@@ -565,3 +565,38 @@ func TestAdminService_AdminUpdateAPIKeyGroupID_Unbind_NoAllowedGroupUpdate(t *te
 	require.False(t, userRepo.addGroupCalled)
 	require.False(t, got.AutoGrantedGroupAccess)
 }
+
+func TestAdminAPIKeyAccessQuotaAndStatus(t *testing.T) {
+	number := func(x float64) *float64 { return &x }
+	state := func(x string) *string { return &x }
+	expired := time.Now().Add(-time.Hour)
+	for _, tc := range []struct {
+		name   string
+		key    APIKey
+		in     AdminAPIKeyAccess
+		quota  float64
+		status string
+		fail   bool
+	}{
+		{"increase", APIKey{Quota: 100, QuotaUsed: 60, Status: StatusActive}, AdminAPIKeyAccess{ExpectedQuota: number(100), QuotaIncrease: number(50)}, 150, StatusActive, false},
+		{"stale increment", APIKey{Quota: 150, QuotaUsed: 60, Status: StatusActive}, AdminAPIKeyAccess{ExpectedQuota: number(100), QuotaIncrease: number(50)}, 150, StatusActive, true},
+		{"set unlimited", APIKey{Quota: 10, QuotaUsed: 20, Status: StatusAPIKeyQuotaExhausted}, AdminAPIKeyAccess{ExpectedQuota: number(10), Quota: number(0)}, 0, StatusActive, false},
+		{"increase unlimited", APIKey{Status: StatusActive}, AdminAPIKeyAccess{ExpectedQuota: number(0), QuotaIncrease: number(50)}, 0, StatusActive, true},
+		{"disable", APIKey{Quota: 50, Status: StatusActive}, AdminAPIKeyAccess{Status: state("inactive")}, 50, "inactive", false},
+		{"enable expired", APIKey{ExpiresAt: &expired, Status: "inactive"}, AdminAPIKeyAccess{Status: state(StatusActive)}, 0, StatusAPIKeyExpired, false},
+		{"enable spent", APIKey{Quota: 100, QuotaUsed: 110, Status: "inactive"}, AdminAPIKeyAccess{Status: state(StatusActive)}, 100, StatusAPIKeyQuotaExhausted, false},
+		{"raise while disabled", APIKey{Quota: 100, Status: "inactive"}, AdminAPIKeyAccess{ExpectedQuota: number(100), QuotaIncrease: number(5)}, 105, "inactive", false},
+		{"tiny amount", APIKey{Quota: 100, Status: StatusActive}, AdminAPIKeyAccess{ExpectedQuota: number(100), Quota: number(.000000001)}, 100, StatusActive, true},
+		{"mixed changes", APIKey{Quota: 100, Status: StatusActive}, AdminAPIKeyAccess{ExpectedQuota: number(100), Quota: number(120), QuotaIncrease: number(20)}, 100, StatusActive, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			before := tc.key.QuotaUsed
+			fields, err := tc.in.apply(&tc.key)
+			require.Equal(t, tc.fail, err != nil)
+			require.Equal(t, tc.quota, tc.key.Quota)
+			require.Equal(t, tc.status, tc.key.Status)
+			require.Equal(t, before, tc.key.QuotaUsed)
+			require.False(t, fields.QuotaUsed)
+		})
+	}
+}

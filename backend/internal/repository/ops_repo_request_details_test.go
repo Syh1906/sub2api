@@ -37,13 +37,13 @@ func TestOpsRepositoryListRequestDetails_LatencySort(t *testing.T) {
 				WithArgs(start, end).
 				WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(13))
 			rows := sqlmock.NewRows([]string{
-				"kind", "created_at", "request_id", "platform", "model", "duration_ms", "first_token_ms",
+				"kind", "record_id", "created_at", "request_id", "platform", "model", "duration_ms", "first_token_ms",
 				"status_code", "error_id", "phase", "severity", "message", "user_id", "api_key_id", "account_id", "group_id", "stream",
 			}).
-				AddRow("success", start, "req-slow", "openai", "gpt-5.5", 12000, 800, nil, nil, nil, nil, nil, 1, 2, 3, 4, true).
-				AddRow("error", start, "req-zero", "openai", "gpt-5.5", 9000, 0, 502, 5, "upstream", "error", "failed", 1, 2, 3, 4, true).
-				AddRow("success", start, "req-missing", "openai", "gpt-5.5", 5000, nil, nil, nil, nil, nil, nil, 1, 2, 3, 4, false)
-			mock.ExpectQuery(`(?s)ul\.first_token_ms AS first_token_ms.*o\.time_to_first_token_ms AS first_token_ms.*SELECT.*duration_ms,\s+first_token_ms,.*ORDER BY `+tc.order+`\s+LIMIT \$3 OFFSET \$4`).
+				AddRow("success", 8, start, "req-slow", "openai", "gpt-5.5", 12000, 800, nil, nil, nil, nil, nil, 1, 2, 3, 4, true).
+				AddRow("error", 5, start, "req-zero", "openai", "gpt-5.5", 9000, 0, 502, 5, "upstream", "error", "failed", 1, 2, 3, 4, true).
+				AddRow("success", 9, start, "req-missing", "openai", "gpt-5.5", 5000, nil, nil, nil, nil, nil, nil, 1, 2, 3, 4, false)
+			mock.ExpectQuery(`(?s)ul\.first_token_ms AS first_token_ms.*o\.time_to_first_token_ms AS first_token_ms.*SELECT.*duration_ms,\s+first_token_ms,.*ORDER BY `+tc.order+`, kind ASC, record_id DESC\s+LIMIT \$3 OFFSET \$4`).
 				WithArgs(start, end, 10, 10).
 				WillReturnRows(rows)
 
