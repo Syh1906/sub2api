@@ -29,6 +29,7 @@
 - 审核的默认模型也进入白名单；拒绝重复或大小写歧义的路由和流式字段。Completions 需有输入和输出用量，自定义 Token 价格要明确对应方向；Rerank 与 Decisions 只读输入计量字段。
 - 标准语音合成支持增量二进制或 SSE，转录与翻译可按上游能力转发 SSE。按次记账以对应音频完成事件或正常二进制结束为准，断流不扣费。归属：`backend/internal/service/openai_native_audio.go`、原生处理器及 HTTP 错误收尾。隔离 HTTP 与 PostgreSQL 已核对取消后成功、缺终止、二进制截断、Key 额度及订阅窗口；未涉及真实供应商、迁移或发布。
 - 实现提交 `de5e184c2`，流式传输与用量修复提交 `887dd88da`。真实供应商能力与费用须按实际渠道另验。
+- [v0.2.22-fork.1](https://github.com/Syh1906/sub2api/releases/tag/v0.2.22-fork.1) 已由[精简发布流程](https://github.com/Syh1906/sub2api/actions/runs/44226423818)发布；源码 `bf2e98ec9404b9cce46deb3a7d72696ab965c01a` 的 [CI](https://github.com/Syh1906/sub2api/actions/runs/44224610094) 通过。Linux amd64 镜像 `ghcr.io/syh1906/sub2api@sha256:e01cc225d8e49199fbedb73646d561e43f9edaada5eaed7a70252f7853e1fcb7` 已按摘要拉取并核对源码标签。隔离 PostgreSQL 实测：一笔文本生成和两笔语音各只记一次，客户端收到首段后离开而上游正常完成的语音仍按次计费。未部署到生产。
 - 同步上游时逐项核对是否已提供等价端点，特别注意原生流式输出、multipart 模型映射、渠道价格来源、缺失用量处理和重复请求编号不能漏扣费。
 
 后续每项功能或修复记录以下内容：
