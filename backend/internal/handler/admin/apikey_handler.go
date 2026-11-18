@@ -29,6 +29,21 @@ type AdminUpdateAPIKeyGroupRequest struct {
 	ResetRateLimitUsage *bool  `json:"reset_rate_limit_usage"` // true=重置 5h/1d/7d 限速用量
 }
 
+// GetAccess returns the mutable fields needed to reconcile a lost update response.
+func (h *AdminAPIKeyHandler) GetAccess(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		response.BadRequest(c, "Invalid API key ID")
+		return
+	}
+	key, err := h.adminService.GetAdminAPIKey(c.Request.Context(), id)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"id": key.ID, "user_id": key.UserID, "quota": key.Quota, "quota_used": key.QuotaUsed, "status": key.Status})
+}
+
 // UpdateGroup handles updating an API key's admin-managed fields.
 // PUT /api/v1/admin/api-keys/:id
 func (h *AdminAPIKeyHandler) UpdateGroup(c *gin.Context) {

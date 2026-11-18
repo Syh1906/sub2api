@@ -382,3 +382,22 @@ func TestNativeProtocolInputOnlyUsageIgnoresOutputMetadata(t *testing.T) {
 	_, ok := nativeProtocolUsage("/v1/decisions", []byte(`{"usage":{"output_tokens":999}}`))
 	require.False(t, ok)
 }
+
+func TestNativeProtocolUsageKeepsClientAndBillingIDs(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{}
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
+	svc := newOpenAIRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{}, nil)
+	ctx := context.WithValue(t.Context(), ctxkey.ClientRequestID, "customer-correlation")
+	for range 2 {
+		billingID := newNativeBillingRequestID()
+		err := svc.RecordUsage(ctx, &OpenAIRecordUsageInput{
+			Result: &OpenAIForwardResult{RequestID: billingID, Model: "gpt-5.1", Usage: OpenAIUsage{InputTokens: 8, OutputTokens: 4}},
+			APIKey: &APIKey{ID: 10050}, User: &User{ID: 20050}, Account: &Account{ID: 30050},
+		})
+		require.NoError(t, err)
+		require.Equal(t, billingID, billingRepo.lastCmd.RequestID)
+		require.Equal(t, billingID, usageRepo.lastLog.RequestID)
+		require.NotNil(t, usageRepo.lastLog.ClientRequestID)
+		require.Equal(t, "customer-correlation", *usageRepo.lastLog.ClientRequestID)
+	}
+}

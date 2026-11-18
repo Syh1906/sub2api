@@ -99,7 +99,7 @@ WITH combined AS (
     'success'::TEXT AS kind,
     ul.created_at AS created_at,
     ul.request_id AS request_id,
-    CASE WHEN starts_with(ul.request_id,'client:') THEN substr(ul.request_id,8) ELSE ul.request_id END AS customer_request_id,
+    COALESCE(ul.client_request_id, CASE WHEN starts_with(ul.request_id,'client:') THEN substr(ul.request_id,8) ELSE ul.request_id END) AS customer_request_id,
     COALESCE(NULLIF(g.platform, ''), NULLIF(a.platform, ''), '') AS platform,
     ul.id AS record_id,
     false AS count_tokens,
@@ -154,9 +154,20 @@ WITH combined AS (
 )
 `
 
+	var reader sqlQueryer = r.db
+	var tx *sql.Tx
+	if filter != nil && filter.CustomerView {
+		var err error
+		tx, err = r.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
+		if err != nil {
+			return nil, 0, err
+		}
+		defer func() { _ = tx.Rollback() }()
+		reader = tx
+	}
 	countQuery := fmt.Sprintf(`%s SELECT COUNT(1) FROM combined %s`, cte, where)
 	var total int64
-	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
+	if err := scanSingleRow(ctx, reader, countQuery, args, &total); err != nil {
 		if err == sql.ErrNoRows {
 			total = 0
 		} else {
@@ -179,6 +190,17 @@ WITH combined AS (
 	}
 
 	sort += ", kind ASC, record_id DESC"
+	limit := pageSize
+	if filter != nil && filter.CustomerView {
+		// Read one extra row so the last page remains accurate even when new rows arrive before the cursor.
+		limit++
+		if after := filter.After; after != nil {
+			n := len(args) + 1
+			addCondition(fmt.Sprintf("(created_at < $%[1]d OR (created_at = $%[1]d AND (kind > $%[2]d OR (kind = $%[2]d AND record_id < $%[3]d))))", n, n+1, n+2), after.CreatedAt, after.Kind, after.ID)
+			where = "WHERE " + strings.Join(conditions, " AND ")
+			offset = 0
+		}
+	}
 	listQuery := fmt.Sprintf(`
 %s
 SELECT
@@ -206,8 +228,8 @@ FROM combined
 LIMIT $%d OFFSET $%d
 `, cte, requestColumn, modelColumn, where, sort, len(args)+1, len(args)+2)
 
-	listArgs := append(append([]any{}, args...), pageSize, offset)
-	rows, err := r.db.QueryContext(ctx, listQuery, listArgs...)
+	listArgs := append(append([]any{}, args...), limit, offset)
+	rows, err := reader.QueryContext(ctx, listQuery, listArgs...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -312,5 +334,10 @@ LIMIT $%d OFFSET $%d
 		return nil, 0, err
 	}
 
+	if tx != nil {
+		if err := tx.Commit(); err != nil {
+			return nil, 0, err
+		}
+	}
 	return out, total, nil
 }

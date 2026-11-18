@@ -118,11 +118,13 @@ func TestUsageLogStaticInsertShape_PlaceholdersMatchArgTypes(t *testing.T) {
 // TestPrepareUsageLogInsert_UpstreamRequestIDArgWiring 把 upstream_request_id 钉在
 // session_id 之前，与参数类型表保持同位；缺失时落 NULL 而不是空串。
 func TestPrepareUsageLogInsert_UpstreamRequestIDArgWiring(t *testing.T) {
+	clientRequestID := "public-request-123"
 	upstreamRequestID := "req_upstream_123"
 	prepared := prepareUsageLogInsert(&service.UsageLog{
 		UserID:            1,
 		APIKeyID:          2,
-		RequestID:         "client:wiring",
+		RequestID:         "native_protocol:wiring",
+		ClientRequestID:   &clientRequestID,
 		Model:             "gpt-5",
 		UpstreamRequestID: &upstreamRequestID,
 		CreatedAt:         time.Now().UTC(),
@@ -130,6 +132,7 @@ func TestPrepareUsageLogInsert_UpstreamRequestIDArgWiring(t *testing.T) {
 	require.Len(t, prepared.args, len(usageLogInsertArgTypes))
 
 	idx := len(prepared.args) - 6
+	require.Equal(t, sql.NullString{String: clientRequestID, Valid: true}, prepared.args[idx-1])
 	arg, ok := prepared.args[idx].(sql.NullString)
 	require.True(t, ok, "upstream_request_id arg should be sql.NullString, got %T", prepared.args[idx])
 	require.True(t, arg.Valid)

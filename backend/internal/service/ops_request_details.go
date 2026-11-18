@@ -44,6 +44,7 @@ type OpsRequestDetail struct {
 
 type OpsRequestDetailFilter struct {
 	CustomerView bool
+	After        *UserRequestPosition
 	StartTime    *time.Time
 	EndTime      *time.Time
 

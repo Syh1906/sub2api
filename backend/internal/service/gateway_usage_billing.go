@@ -215,6 +215,14 @@ func postUsageBilling(ctx context.Context, p *postUsageBillingParams, deps *bill
 	// by the caller after recording the usage log.
 }
 
+func usageClientRequestID(ctx context.Context) *string {
+	if ctx == nil {
+		return nil
+	}
+	id, _ := ctx.Value(ctxkey.ClientRequestID).(string)
+	return optionalTrimmedStringPtr(id)
+}
+
 func resolveUsageBillingRequestID(ctx context.Context, upstreamRequestID string) string {
 	// Forced durable money-event IDs must win over client/local context IDs so
 	// standalone web_search / async video cannot collapse under a reused client id.
@@ -1354,6 +1362,7 @@ func (s *GatewayService) buildRecordUsageLog(
 		APIKeyID:                 apiKey.ID,
 		AccountID:                account.ID,
 		RequestID:                requestID,
+		ClientRequestID:          usageClientRequestID(ctx),
 		UpstreamRequestID:        usageUpstreamRequestIDPtr(account, result.UpstreamHeaders, false),
 		Model:                    result.Model,
 		RequestedModel:           requestedModel,

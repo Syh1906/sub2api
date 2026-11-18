@@ -79,6 +79,10 @@ func (in AdminAPIKeyAccess) apply(key *APIKey) (APIKeyUpdateFields, error) {
 	return fields, nil
 }
 
+func (s *adminServiceImpl) GetAdminAPIKey(ctx context.Context, keyID int64) (*APIKey, error) {
+	return s.apiKeyRepo.GetByID(ctx, keyID)
+}
+
 func (s *adminServiceImpl) AdminUpdateAPIKeyAccess(ctx context.Context, keyID int64, input AdminAPIKeyAccess) (*APIKey, error) {
 	tx, err := s.entClient.Tx(ctx)
 	if err != nil {

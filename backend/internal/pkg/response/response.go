@@ -123,18 +123,18 @@ func InternalError(c *gin.Context, message string) {
 
 // Paginated 返回分页数据
 func Paginated(c *gin.Context, items any, total int64, page, pageSize int) {
+	Success(c, NewPaginatedData(items, total, page, pageSize))
+}
+
+func NewPaginatedData(items any, total int64, page, pageSize int) PaginatedData {
 	pages := int(math.Ceil(float64(total) / float64(pageSize)))
 	if pages < 1 {
 		pages = 1
 	}
 
-	Success(c, PaginatedData{
-		Items:    items,
-		Total:    total,
-		Page:     page,
-		PageSize: pageSize,
-		Pages:    pages,
-	})
+	return PaginatedData{
+		Items: items, Total: total, Page: page, PageSize: pageSize, Pages: pages,
+	}
 }
 
 // PaginationResult 分页结果（与pagination.PaginationResult兼容）

@@ -692,7 +692,12 @@ func usageLogFromServiceUser(l *service.UsageLog) UsageLog {
 	if requestedModel == "" {
 		requestedModel = l.Model
 	}
+	customerRequestID := strings.TrimPrefix(l.RequestID, "client:")
+	if l.ClientRequestID != nil {
+		customerRequestID = *l.ClientRequestID
+	}
 	return UsageLog{
+		CustomerRequestID:         customerRequestID,
 		ID:                        l.ID,
 		UserID:                    l.UserID,
 		APIKeyID:                  l.APIKeyID,

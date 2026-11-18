@@ -2,10 +2,37 @@ package service
 
 import (
 	"context"
+	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
+
+// UserRequestPosition identifies the last row in descending time, kind, and ID order.
+type UserRequestPosition struct {
+	CreatedAt time.Time
+	Kind      OpsRequestKind
+	ID        int64
+}
+
+func (p UserRequestPosition) String() string {
+	return fmt.Sprintf("%s|%s|%d", p.CreatedAt.UTC().Format(time.RFC3339Nano), p.Kind, p.ID)
+}
+
+func ParseUserRequestPosition(raw string) (*UserRequestPosition, error) {
+	parts := strings.Split(raw, "|")
+	if len(parts) == 3 {
+		ts, timeErr := time.Parse(time.RFC3339Nano, parts[0])
+		id, idErr := strconv.ParseInt(parts[2], 10, 64)
+		kind := OpsRequestKind(parts[1])
+		if timeErr == nil && idErr == nil && id > 0 && (kind == OpsRequestKindSuccess || kind == OpsRequestKindError) {
+			return &UserRequestPosition{ts, kind, id}, nil
+		}
+	}
+	return nil, infraerrors.BadRequest("INVALID_REQUEST_CURSOR", "Invalid request history cursor")
+}
 
 type UserRequest struct {
 	ID         int64          `json:"id"`

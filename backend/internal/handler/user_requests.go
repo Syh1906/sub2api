@@ -39,6 +39,14 @@ func (h *UsageHandler) ListRequests(c *gin.Context) {
 		StartTime: &filters.StartTime, EndTime: &filters.EndTime,
 		Model: filters.Filters.Model, RequestID: strings.TrimSpace(c.Query("request_id")),
 	}
+	if raw := c.Query("after"); raw != "" {
+		cursor, err := service.ParseUserRequestPosition(raw)
+		if err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+		filter.After = cursor
+	}
 	if filters.Filters.APIKeyID > 0 {
 		filter.APIKeyID = &filters.Filters.APIKeyID
 	}
@@ -47,5 +55,14 @@ func (h *UsageHandler) ListRequests(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	response.Paginated(c, rows, total, page, size)
+	var next string
+	if len(rows) > size {
+		rows = rows[:size]
+		last := rows[size-1]
+		next = service.UserRequestPosition{CreatedAt: last.CreatedAt, Kind: last.Kind, ID: last.ID}.String()
+	}
+	response.Success(c, struct {
+		response.PaginatedData
+		Next string `json:"next_cursor"`
+	}{response.NewPaginatedData(rows, total, page, size), next})
 }

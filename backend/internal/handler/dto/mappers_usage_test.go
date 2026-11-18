@@ -8,6 +8,24 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestUsageLogFromService_CustomerRequestID(t *testing.T) {
+	id := "response-id"
+	for _, tc := range []struct {
+		billing string
+		client  *string
+		want    string
+	}{
+		{"native_protocol:billing-id", &id, id},
+		{"client:old-id", nil, "old-id"},
+		{"native_protocol:old-billing-id", nil, "native_protocol:old-billing-id"},
+	} {
+		u := UsageLogFromService(&service.UsageLog{RequestID: tc.billing, ClientRequestID: tc.client})
+		if u.CustomerRequestID != tc.want || u.RequestID != tc.billing {
+			t.Fatalf("billing %q and customer %q", u.RequestID, u.CustomerRequestID)
+		}
+	}
+}
+
 func TestUsageLogFromService_IncludesOpenAIWSMode(t *testing.T) {
 	t.Parallel()
 

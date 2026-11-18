@@ -6,9 +6,23 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
+
+func TestUserRequestPosition(t *testing.T) {
+	p := UserRequestPosition{CreatedAt: time.Unix(1234, 567000).UTC(), Kind: OpsRequestKindError, ID: 42}
+	got, err := ParseUserRequestPosition(p.String())
+	if err != nil || *got != p {
+		t.Fatalf("cursor round trip: %v, %v", got, err)
+	}
+	for _, raw := range []string{"invalid", "1970-01-01T00:00:00Z|success|0", "1970-01-01T00:00:00Z|other|42"} {
+		if _, err := ParseUserRequestPosition(raw); err == nil {
+			t.Fatalf("accepted invalid cursor %q", raw)
+		}
+	}
+}
 
 type stubOpsRepoForUserErr struct {
 	OpsRepository // 嵌入接口，未实现的方法 panic，仅覆盖 ListErrorLogs

@@ -69,6 +69,7 @@ type AdminService interface {
 
 	// API Key management (admin)
 	AdminUpdateAPIKeyGroupID(ctx context.Context, keyID int64, groupID *int64) (*AdminUpdateAPIKeyGroupIDResult, error)
+	GetAdminAPIKey(ctx context.Context, keyID int64) (*APIKey, error)
 	AdminUpdateAPIKeyAccess(ctx context.Context, keyID int64, input AdminAPIKeyAccess) (*APIKey, error)
 	AdminResetAPIKeyRateLimitUsage(ctx context.Context, keyID int64) (*APIKey, error)
 
