@@ -78,7 +78,7 @@ func (s *OpenAIGatewayService) ForwardNativeProtocol(
 	upstreamReq.Header.Set("Content-Type", contentType)
 	upstreamReq.Header.Set("Authorization", "Bearer "+upstreamKey)
 	upstreamReq.Header.Set("Accept", "*/*")
-	if request.Stream {
+	if request.Stream && !request.BinaryAudio {
 		upstreamReq.Header.Set("Accept", "text/event-stream")
 	}
 	for key, values := range c.Request.Header {
@@ -158,15 +158,25 @@ func (s *OpenAIGatewayService) ForwardNativeProtocol(
 		return nil, fmt.Errorf("upstream returned status %d", resp.StatusCode)
 	}
 
+	isAudio := strings.HasPrefix(request.Endpoint, "/v1/audio/")
+	if isAudio && resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("incomplete upstream audio response: HTTP %d", resp.StatusCode)
+	}
 	result := &OpenAIForwardResult{RequestID: newNativeBillingRequestID(), UpstreamHeaders: resp.Header, Model: originalModel, BillingModel: billingModel, UpstreamModel: upstreamModel, Stream: request.Stream, NativePricing: pricing, UpstreamEndpoint: request.Endpoint}
 	if request.Stream {
+		if isAudio {
+			return s.streamNativeAudio(c, resp, result, request.BinaryAudio, startTime)
+		}
 		return s.streamNativeCompletions(c, resp, result, startTime)
 	}
 	respBody, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, openAITooLargeError)
 	if err != nil {
 		return nil, fmt.Errorf("read upstream body: %w", err)
 	}
-	usage, hasUsage := nativeProtocolUsage(respBody)
+	if request.Endpoint == "/v1/audio/speech" && (!nativeAudioMedia(resp.Header.Get("Content-Type")) || len(respBody) == 0) {
+		return nil, fmt.Errorf("upstream did not return audio")
+	}
+	usage, hasUsage := nativeProtocolUsage(request.Endpoint, respBody)
 	if pricing.Mode == BillingModeToken && !hasUsage {
 		writeOpenAIEmbeddingsError(c, http.StatusBadGateway, "upstream_error", "Upstream response is missing billable usage")
 		return nil, fmt.Errorf("missing native token usage")
@@ -193,7 +203,7 @@ func (s *OpenAIGatewayService) streamNativeCompletions(c *gin.Context, resp *htt
 				done = true
 				continue
 			}
-			if usage, ok := nativeProtocolUsage([]byte(payload)); ok {
+			if usage, ok := nativeProtocolUsage("/v1/completions", []byte(payload)); ok {
 				result.Usage = usage
 				hasUsage = true
 			}

@@ -43,7 +43,7 @@ func TestNativeProtocolForwardAndPrice(t *testing.T) {
 	for _, tc := range []struct{ endpoint, body, response, content string }{
 		{"/v1/completions", `{"model":"alias","prompt":["Hello","World"],"suffix":"!","n":2}`, `{"choices":[{"text":"Hello!","index":0}],"usage":{"prompt_tokens":4,"completion_tokens":2,"total_tokens":6}}`, "application/json"},
 		{"/v1/rerank", `{"model":"alias","query":"hello","documents":["a","b"]}`, `{"results":[{"index":0,"relevance_score":0.9}],"usage":{"total_tokens":6}}`, "application/json"},
-		{"/v1/decisions", `{"model":"alias","input":"test","choices":["a","b"]}`, `{"decision":"a","usage":{"input_tokens":4,"output_tokens":2}}`, "application/json"},
+		{"/v1/decisions", `{"model":"alias","input":"test","questions":[{"type":"choice","name":"route","instructions":"Choose a route","choices":[{"value":"yes"},{"value":"no"}]}]}`, `{"answers":[{"type":"choice","name":"route","choice":"yes"}],"usage":{"input_tokens":4}}`, "application/json"},
 		{"/v1/moderations", `{"model":"alias","input":"hello"}`, `{"results":[{"flagged":false}]}`, "application/json"},
 		{"/v1/audio/speech", `{"model":"alias","input":"hello","voice":"alloy","response_format":"mp3"}`, "ID3synthetic-audio", "audio/mpeg"},
 	} {
@@ -76,7 +76,7 @@ func TestNativeProtocolAudioMultipartPreservesFile(t *testing.T) {
 		_, err = file.Write(audio)
 		require.NoError(t, err)
 		require.NoError(t, writer.Close())
-		req, err := ParseNativeProtocolRequest(endpoint, writer.FormDataContentType(), body.Bytes())
+		req, err := ParseNativeProtocolRequest(endpoint, strings.Replace(writer.FormDataContentType(), "multipart/form-data", "Multipart/Form-Data", 1), body.Bytes())
 		require.NoError(t, err)
 		mapped, ct, err := req.withModel("native-model")
 		require.NoError(t, err)
@@ -134,12 +134,12 @@ func TestNativeProtocolFailsWithoutPricingAndUsage(t *testing.T) {
 	require.Nil(t, up.lastReq)
 	require.Equal(t, 400, rec.Code)
 	for _, body := range []string{`{}`, `{"usage":{}}`, `{"usage":{"input_tokens":-1}}`, `{"usage":{"input_tokens":1.5}}`} {
-		_, ok := nativeProtocolUsage([]byte(body))
+		_, ok := nativeProtocolUsage("/v1/rerank", []byte(body))
 		require.False(t, ok)
 	}
-	usage, ok := nativeProtocolUsage([]byte(`{"usage":{"total_tokens":7,"completion_tokens":2}}`))
+	usage, ok := nativeProtocolUsage("/v1/rerank", []byte(`{"usage":{"total_tokens":7,"completion_tokens":2}}`))
 	require.True(t, ok)
-	require.Equal(t, 5, usage.InputTokens)
+	require.Equal(t, 7, usage.InputTokens)
 }
 
 func TestNativeProtocolCapabilitiesAndValidation(t *testing.T) {
@@ -222,4 +222,163 @@ func TestNativeProtocolPreservesUpstreamClientError(t *testing.T) {
 	require.Nil(t, result)
 	require.Equal(t, 400, rec.Code)
 	require.Equal(t, body, rec.Body.String())
+}
+
+func TestNativeProtocolModerationDefaultModel(t *testing.T) {
+	for _, body := range []string{`{"input":"hello"}`, `{"model":null,"input":"hello"}`, `{"model":" ","input":"hello"}`} {
+		req, err := ParseNativeProtocolRequest("/v1/moderations", "application/json", []byte(body))
+		require.NoError(t, err)
+		require.Equal(t, "omni-moderation-latest", req.Model)
+	}
+}
+
+func TestNativeProtocolRejectsAmbiguousModel(t *testing.T) {
+	for _, body := range []string{
+		`{"model":"cheap","model":"expensive","prompt":"hello"}`,
+		`{"model":"cheap","Model":"expensive","prompt":"hello"}`,
+		`{"model":"cheap","model":null,"prompt":"hello"}`,
+		`{"model":"m","prompt":"hello","stream":false,"stream":true}`,
+		`{"model":"m","prompt":"hello","stream":false,"Stream":true}`,
+		`{"model":"m","prompt":"hello","stream":false,"ſtream":true}`,
+		`{"model":"m","prompt":"hello","stream_options":{},"stream_options":{"include_usage":false}}`,
+		`{"model":"m","prompt":"hello","stream":true,"stream_options":{"include_usage":true,"include_usage":false}}`,
+		`{"model":"m","prompt":"hello","stream":true,"stream_options":{"include_usage":true,"Include_Usage":false}}`,
+	} {
+		_, err := ParseNativeProtocolRequest("/v1/completions", "application/json", []byte(body))
+		require.Error(t, err, "ambiguous routing model must fail before forwarding: %s", body)
+	}
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	require.NoError(t, writer.WriteField("model", ""))
+	require.NoError(t, writer.WriteField("model", "second-model"))
+	file, err := writer.CreateFormFile("file", "sample.wav")
+	require.NoError(t, err)
+	_, err = file.Write([]byte("audio"))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+	_, err = ParseNativeProtocolRequest("/v1/audio/transcriptions", writer.FormDataContentType(), body.Bytes())
+	require.Error(t, err, "blank first model cannot hide a duplicate routing field")
+}
+
+func TestNativeProtocolAudioStreamControl(t *testing.T) {
+	speech, err := ParseNativeProtocolRequest("/v1/audio/speech", "application/json", []byte(`{"model":"m","input":"hello","stream_format":"sse"}`))
+	require.NoError(t, err)
+	require.True(t, speech.Stream)
+	require.False(t, speech.BinaryAudio)
+	mapped, _, err := speech.withModel("provider-voice")
+	require.NoError(t, err)
+	require.JSONEq(t, `{"model":"provider-voice","input":"hello","stream_format":"sse"}`, string(mapped))
+	_, err = ParseNativeProtocolRequest("/v1/audio/speech", "application/json", []byte(`{"model":"m","input":"hello","stream_format":"invalid"}`))
+	require.Error(t, err)
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	require.NoError(t, writer.WriteField("model", "m"))
+	require.NoError(t, writer.WriteField("stream", "true"))
+	file, err := writer.CreateFormFile("file", "sample.wav")
+	require.NoError(t, err)
+	_, err = file.Write([]byte("audio"))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+	upload, err := ParseNativeProtocolRequest("/v1/audio/transcriptions", writer.FormDataContentType(), body.Bytes())
+	require.NoError(t, err)
+	require.True(t, upload.Stream)
+	require.False(t, upload.BinaryAudio)
+}
+
+func TestNativeProtocolCompletionPartialUsageIsUnknown(t *testing.T) {
+	for _, usage := range []string{`{"prompt_tokens":3}`, `{"completion_tokens":2}`, `{"total_tokens":5}`} {
+		svc, account, key, req, c, rec, _ := nativeFixture(t, "/v1/completions", `{"model":"alias","prompt":"hello"}`, "application/json", `{"choices":[{"text":"hello","index":0}],"usage":`+usage+`}`, false)
+		input, output := 2e-6, 4e-6
+		key.Group.ModelPricing[0] = ChannelModelPricing{Models: []string{"alias"}, BillingMode: BillingModeToken, InputPrice: &input, OutputPrice: &output}
+		result, err := svc.ForwardNativeProtocol(t.Context(), c, account, req, key, ChannelMappingResult{MappedModel: "alias"})
+		require.Error(t, err, "partial completion usage cannot become a zero-priced output")
+		require.Nil(t, result)
+		require.Equal(t, 502, rec.Code)
+	}
+}
+
+func TestNativeProtocolAudioStreamTerminal(t *testing.T) {
+	const request = `{"model":"alias","input":"test","stream_format":"sse"}`
+	for _, tc := range []struct {
+		name, wire string
+		success    bool
+	}{
+		{"complete", "event: speech.audio.delta\ndata: {\"type\":\"speech.audio.delta\",\"audio\":\"YQ==\"}\n\nevent: speech.audio.done\ndata: {}\n\n", true},
+		{"partial terminal", "data: {\"type\":\"speech.audio.done\"}\n", false},
+		{"wrong terminal", "data: {\"type\":\"transcript.text.done\"}\n\n", false},
+		{"error", "event: error\ndata: {\"type\":\"error\"}\n\n", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, account, key, req, c, rec, _ := nativeFixture(t, "/v1/audio/speech", request, "text/event-stream", tc.wire, true)
+			result, err := svc.ForwardNativeProtocol(t.Context(), c, account, req, key, ChannelMappingResult{})
+			if !tc.success {
+				require.Error(t, err)
+				require.Nil(t, result)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, BillingModePerRequest, result.NativePricing.Mode)
+				require.Equal(t, tc.wire, rec.Body.String())
+			}
+			require.NotContains(t, rec.Body.String(), "[DONE]")
+		})
+	}
+}
+
+func TestNativeProtocolAudioRejectsPartialSuccessStatus(t *testing.T) {
+	for _, status := range []int{http.StatusPartialContent, http.StatusFound} {
+		svc, account, key, req, c, _, transport := nativeFixture(t, "/v1/audio/speech", `{"model":"alias","input":"hello","stream_format":"audio"}`, "audio/mpeg", "abc", true)
+		transport.resp.StatusCode = status
+		result, err := svc.ForwardNativeProtocol(t.Context(), c, account, req, key, ChannelMappingResult{})
+		require.Error(t, err)
+		require.Nil(t, result)
+	}
+}
+
+func TestNativeProtocolAudioReadIdle(t *testing.T) {
+	svc, account, key, req, c, rec, transport := nativeFixture(t, "/v1/audio/speech", `{"model":"alias","input":"hi","stream_format":"sse"}`, "text/event-stream", "", true)
+	reader, writer := io.Pipe()
+	defer writer.Close()
+	transport.resp.Body = reader
+	svc.cfg.Gateway.StreamDataIntervalTimeout = 1
+	delta := "data: {\"type\":\"speech.audio.delta\",\"audio\":\"YQ==\"}\n\n"
+	go func() { _, _ = io.WriteString(writer, delta) }()
+	result, err := svc.ForwardNativeProtocol(t.Context(), c, account, req, key, ChannelMappingResult{})
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Contains(t, rec.Body.String(), delta)
+	require.Contains(t, rec.Body.String(), "event: error")
+	require.NotContains(t, rec.Body.String(), "speech.audio.done")
+}
+
+func TestNativeProtocolCustomPriceRequiresMeteredDirections(t *testing.T) {
+	svc, _, key, req, _, _, _ := nativeFixture(t, "/v1/completions", `{"model":"alias","prompt":"hello"}`, "application/json", `{}`, false)
+	price := 0.0
+	for _, card := range []ChannelModelPricing{
+		{Models: []string{"alias"}, BillingMode: BillingModeToken, InputPrice: &price},
+		{Models: []string{"alias"}, BillingMode: BillingModeToken, OutputPrice: &price},
+	} {
+		key.Group.ModelPricing[0] = card
+		_, _, err := svc.nativeProtocolPricing(t.Context(), key, req, ChannelMappingResult{MappedModel: "alias"}, "native-model")
+		require.Error(t, err, "a missing price is not explicit free pricing")
+	}
+	key.Group.ModelPricing[0] = ChannelModelPricing{Models: []string{"alias"}, BillingMode: BillingModeToken, InputPrice: &price, OutputPrice: &price}
+	_, _, err := svc.nativeProtocolPricing(t.Context(), key, req, ChannelMappingResult{MappedModel: "alias"}, "native-model")
+	require.NoError(t, err)
+	key.Group.ModelPricing[0].OutputPrice = nil
+	for _, endpoint := range []string{"/v1/rerank", "/v1/decisions"} {
+		req.Endpoint = endpoint
+		_, _, err := svc.nativeProtocolPricing(t.Context(), key, req, ChannelMappingResult{MappedModel: "alias"}, "native-model")
+		require.NoError(t, err)
+	}
+}
+
+func TestNativeProtocolInputOnlyUsageIgnoresOutputMetadata(t *testing.T) {
+	for _, endpoint := range []string{"/v1/rerank", "/v1/decisions"} {
+		usage, ok := nativeProtocolUsage(endpoint, []byte(`{"usage":{"input_tokens":120,"output_tokens":999,"total_tokens":1119}}`))
+		require.True(t, ok)
+		require.Equal(t, 120, usage.InputTokens)
+		require.Zero(t, usage.OutputTokens, "this endpoint only meters input tokens")
+	}
+	_, ok := nativeProtocolUsage("/v1/decisions", []byte(`{"usage":{"output_tokens":999}}`))
+	require.False(t, ok)
 }

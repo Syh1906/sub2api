@@ -26,6 +26,9 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+// DefaultModerationModel is the native moderation API default when model is omitted.
+const DefaultModerationModel = "omni-moderation-latest"
+
 // liveRequestRoutes 是模型位于 session.model（而非顶层 model）的入口，
 // 与 Live handler 的解析保持一致。
 var liveRequestRoutes = map[string]bool{
@@ -55,6 +58,15 @@ func FromBodyCandidates(routePath, contentType string, body []byte) []string {
 		session = jsonSessionModelCandidates(body)
 	}
 
+	// Moderation ignores session.model. Include its effective default in admission
+	// and composite routing so omitting model cannot bypass the group allowlist.
+	if routePath == "/v1/moderations" || routePath == "/moderations" {
+		model := gjson.GetBytes(body, "model")
+		if model.Type == gjson.Null || (model.Type == gjson.String && strings.TrimSpace(model.String()) == "") {
+			return append([]string{DefaultModerationModel}, topLevel...)
+		}
+		return topLevel
+	}
 	if IsLiveRequestRoute(routePath) {
 		if len(session) > 0 {
 			return session

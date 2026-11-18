@@ -74,7 +74,7 @@ func (h *OpenAIGatewayHandler) nativeProtocol(c *gin.Context, endpoint string) {
 	}
 	reqLog = reqLog.With(zap.String("model", reqModel))
 	setOpsRequestContext(c, reqModel, request.Stream)
-	setOpsEndpointContext(c, "", int16(service.RequestTypeSync))
+	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(request.Stream, false)))
 	if decision := h.checkSecurityAudit(c, reqLog, apiKey, subject, "openai_native_protocol", reqModel, body); decision != nil && !decision.AllowNextStage {
 		h.openAISecurityAuditError(c, decision)
 		return
@@ -90,7 +90,12 @@ func (h *OpenAIGatewayHandler) nativeProtocol(c *gin.Context, endpoint string) {
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
 	service.SetOpsLatencyMs(c, service.OpsAuthLatencyMsKey, time.Since(requestStart).Milliseconds())
 
-	userReleaseFunc, acquired := h.acquireResponsesUserSlot(c, subject.UserID, subject.Concurrency, request.Stream, &streamStarted, reqLog)
+	queueSSE := request.Stream && endpoint == "/v1/completions"
+	var lifetime openAISlotLifetime = wrapReleaseOnDone
+	if request.Stream && !queueSSE {
+		lifetime = releaseAfterForward
+	}
+	userReleaseFunc, acquired := h.acquireOpenAIUserSlot(c, subject.UserID, subject.Concurrency, queueSSE, &streamStarted, reqLog, lifetime)
 	if !acquired {
 		return
 	}
@@ -183,7 +188,7 @@ func (h *OpenAIGatewayHandler) nativeProtocol(c *gin.Context, endpoint string) {
 		account := selection.Account
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
-		accountReleaseFunc, slotResult := h.acquireResponsesAccountSlot(c, apiKey.GroupID, "", selection, request.Stream, &streamStarted, reqLog)
+		accountReleaseFunc, slotResult := h.acquireOpenAIAccountSlot(c, apiKey.GroupID, "", selection, queueSSE, &streamStarted, reqLog, nil, lifetime)
 		if slotResult == openAISlotAcquireProfitVetoed {
 			// 利润终检否决：排除该账号重新选号；否决次数达上限则按无可用账号终止。
 			if !recordOpenAIProfitVeto(failedAccountIDs, account.ID, &profitVetoCount) {
@@ -294,6 +299,9 @@ func (h *OpenAIGatewayHandler) nativeProtocol(c *gin.Context, endpoint string) {
 				zap.Int64("account_id", account.ID),
 				zap.Error(err),
 			)
+			if errors.Is(err, http.ErrAbortHandler) {
+				middleware2.AbortIncompleteStream(c)
+			}
 			return
 		}
 

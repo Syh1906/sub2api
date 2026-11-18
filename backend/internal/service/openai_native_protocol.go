@@ -10,6 +10,7 @@ import (
 	"mime/multipart"
 	"strings"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/requestmodel"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -22,6 +23,7 @@ type NativeProtocolRequest struct {
 	Body        []byte
 	ContentType string
 	Stream      bool
+	BinaryAudio bool
 }
 
 func NativeProtocolCapability(endpoint string) OpenAIEndpointCapability {
@@ -56,12 +58,14 @@ func ParseNativeProtocolRequest(endpoint, contentType string, body []byte) (*Nat
 	if err != nil {
 		return nil, fmt.Errorf("invalid Content-Type")
 	}
+	req.ContentType = mime.FormatMediaType(media, params)
 	if endpoint == "/v1/audio/transcriptions" || endpoint == "/v1/audio/translations" {
 		if media != "multipart/form-data" || params["boundary"] == "" {
 			return nil, fmt.Errorf("audio upload requires multipart/form-data")
 		}
 		reader := multipart.NewReader(bytes.NewReader(body), params["boundary"])
 		hasFile := false
+		modelSeen, streamSeen := false, false
 		for {
 			part, err := reader.NextPart()
 			if err == io.EOF {
@@ -72,14 +76,34 @@ func ParseNativeProtocolRequest(endpoint, contentType string, body []byte) (*Nat
 			}
 			switch part.FormName() {
 			case "model":
+				if part.FileName() != "" {
+					return nil, fmt.Errorf("model must be a text field")
+				}
 				value, err := io.ReadAll(io.LimitReader(part, 1025))
 				if err != nil || len(value) > 1024 {
 					return nil, fmt.Errorf("invalid multipart model")
 				}
-				if req.Model != "" {
+				if modelSeen {
 					return nil, fmt.Errorf("duplicate multipart model")
 				}
+				modelSeen = true
 				req.Model = strings.TrimSpace(string(value))
+			case "stream":
+				if streamSeen || part.FileName() != "" {
+					return nil, fmt.Errorf("stream must be a single text field")
+				}
+				streamSeen = true
+				value, err := io.ReadAll(io.LimitReader(part, 1025))
+				if err != nil || len(value) > 1024 {
+					return nil, fmt.Errorf("invalid multipart stream")
+				}
+				switch strings.ToLower(strings.TrimSpace(string(value))) {
+				case "true", "1", "yes":
+					req.Stream = true
+				case "", "false", "0", "no":
+				default:
+					return nil, fmt.Errorf("stream must be a boolean")
+				}
 			case "file":
 				if part.FileName() == "" {
 					return nil, fmt.Errorf("audio file is required")
@@ -97,9 +121,17 @@ func ParseNativeProtocolRequest(endpoint, contentType string, body []byte) (*Nat
 		if media != "application/json" || !gjson.ValidBytes(body) || !gjson.ParseBytes(body).IsObject() {
 			return nil, fmt.Errorf("a JSON object is required")
 		}
+		if err := validateNativeRoutingFields(body); err != nil {
+			return nil, err
+		}
 		model := gjson.GetBytes(body, "model")
 		if model.Type == gjson.String {
 			req.Model = strings.TrimSpace(model.String())
+		} else if model.Type != gjson.Null {
+			return nil, fmt.Errorf("model must be a string")
+		}
+		if endpoint == "/v1/moderations" && req.Model == "" {
+			req.Model = requestmodel.DefaultModerationModel
 		}
 		stream := gjson.GetBytes(body, "stream")
 		if stream.Exists() && stream.Type != gjson.True && stream.Type != gjson.False {
@@ -108,6 +140,21 @@ func ParseNativeProtocolRequest(endpoint, contentType string, body []byte) (*Nat
 		req.Stream = stream.Bool()
 		if req.Stream && endpoint != "/v1/completions" {
 			return nil, fmt.Errorf("stream is only supported by the completions endpoint")
+		}
+		if endpoint == "/v1/audio/speech" {
+			format := gjson.GetBytes(body, "stream_format")
+			if format.Exists() && format.Type != gjson.String {
+				return nil, fmt.Errorf("stream_format must be a string")
+			}
+			switch strings.ToLower(strings.TrimSpace(format.String())) {
+			case "":
+			case "audio":
+				req.Stream, req.BinaryAudio = true, true
+			case "sse":
+				req.Stream = true
+			default:
+				return nil, fmt.Errorf("stream_format must be audio or sse")
+			}
 		}
 		field := "input"
 		switch endpoint {
@@ -126,10 +173,47 @@ func ParseNativeProtocolRequest(endpoint, contentType string, body []byte) (*Nat
 	return req, nil
 }
 
+func validateNativeRoutingFields(body []byte) error {
+	seen := make(map[string]bool, 4)
+	var err error
+	gjson.ParseBytes(body).ForEach(func(key, value gjson.Result) bool {
+		for _, name := range []string{"model", "stream", "stream_options", "stream_format"} {
+			if !strings.EqualFold(key.String(), name) {
+				continue
+			}
+			if key.String() != name || seen[name] {
+				err = fmt.Errorf("ambiguous %s field: use one lowercase field", name)
+				return false
+			}
+			seen[name] = true
+			if name == "stream_options" && value.IsObject() {
+				seenUsage := false
+				value.ForEach(func(option, _ gjson.Result) bool {
+					if !strings.EqualFold(option.String(), "include_usage") {
+						return true
+					}
+					if option.String() != "include_usage" || seenUsage {
+						err = fmt.Errorf("ambiguous include_usage field: use one lowercase field")
+						return false
+					}
+					seenUsage = true
+					return true
+				})
+				if err != nil {
+					return false
+				}
+			}
+			break
+		}
+		return true
+	})
+	return err
+}
+
 func (req *NativeProtocolRequest) withModel(model string) ([]byte, string, error) {
 	if !strings.HasPrefix(req.ContentType, "multipart/") {
 		body, err := sjson.SetBytes(bytes.Clone(req.Body), "model", model)
-		if err == nil && req.Stream {
+		if err == nil && req.Stream && req.Endpoint == "/v1/completions" {
 			body, err = ensureOpenAIChatStreamUsage(body)
 		}
 		return body, req.ContentType, err
@@ -202,18 +286,44 @@ func (s *OpenAIGatewayService) nativeProtocolPricing(ctx context.Context, apiKey
 	} else if pricing.Mode != BillingModePerRequest && (pricing.Mode != BillingModeToken || pricing.BasePricing == nil) {
 		return "", nil, fmt.Errorf("token or per_request model pricing is required")
 	}
-	if pricing.Mode == BillingModeToken && pricing.channelPricing != nil && pricing.channelPricing.InputPrice == nil && pricing.channelPricing.OutputPrice == nil {
+	if pricing.Mode == BillingModeToken && pricing.channelPricing != nil {
 		if _, err := s.billingService.GetModelPricing(model); err != nil {
-			return "", nil, fmt.Errorf("custom token model prices are required")
+			needsOutput := req.Endpoint == "/v1/completions"
+			if pricing.channelPricing.InputPrice == nil || (needsOutput && pricing.channelPricing.OutputPrice == nil) {
+				return "", nil, fmt.Errorf("explicit prices for every metered token direction are required")
+			}
 		}
 	}
+
 	return model, pricing, nil
 }
 
 // nativeProtocolUsage recognizes token usage without treating total_tokens as
 // prompt_tokens when a provider supplied completion tokens as well.
-func nativeProtocolUsage(body []byte) (OpenAIUsage, bool) {
+func nativeProtocolUsage(endpoint string, body []byte) (OpenAIUsage, bool) {
 	value := gjson.GetBytes(body, "usage")
+	if endpoint == "/v1/decisions" || endpoint == "/v1/rerank" {
+		fields := []string{"input_tokens"}
+		if endpoint == "/v1/rerank" {
+			fields = append(fields, "prompt_tokens", "total_tokens")
+		}
+		for _, field := range fields {
+			v := value.Get(field)
+			if !v.Exists() {
+				continue
+			}
+			if v.Type != gjson.Number || v.Float() < 0 || v.Float() != float64(v.Int()) {
+				return OpenAIUsage{}, false
+			}
+			return OpenAIUsage{InputTokens: int(v.Int())}, true
+		}
+		return OpenAIUsage{}, false
+	}
+
+	if endpoint == "/v1/completions" && (!(value.Get("prompt_tokens").Exists() || value.Get("input_tokens").Exists()) || !(value.Get("completion_tokens").Exists() || value.Get("output_tokens").Exists())) {
+		return OpenAIUsage{}, false
+	}
+
 	found := false
 	for _, field := range []string{"input_tokens", "prompt_tokens", "output_tokens", "completion_tokens", "total_tokens"} {
 		v := value.Get(field)

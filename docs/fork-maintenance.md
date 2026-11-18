@@ -26,6 +26,8 @@
 - 归属：`backend/internal/handler/openai_native_protocol.go`、`backend/internal/service/openai_native_protocol.go`、`openai_native_forward.go`，以及账号能力、路由和现有记账入口。无数据库迁移；接口与配置见[原生扩展协议](native-protocols.md)。
 - 定向验证通过：7 个端点的原生转发、Completions SSE 与截断、multipart 文件/模型映射、音频/文本媒体类型、无身份拒绝、根路径与 `/v1` 模型白名单、按 Token/按次价格和计费来源、缺失价格/用量拒绝、上游 400 保留。合成账务测试中两次独立执行各扣 0.25，余额缓存 100 → 99.5；重复客户端编号不能合并账单，队列溢出仍执行必要记账。
 - 验证使用 `GOMAXPROCS=2`、`go -C backend test -p=1 -tags=unit ./internal/service ./internal/handler ./internal/server/routes -run TestNativeProtocol` 及受影响的既有记账队列用例，使用合成上游和账务存储替身。没有真实模型/费用，也不把测试替身视为数据库整体联调。
+- 审核的默认模型也进入白名单；拒绝重复或大小写歧义的路由和流式字段。Completions 需有输入和输出用量，自定义 Token 价格要明确对应方向；Rerank 与 Decisions 只读输入计量字段。
+- 标准语音合成支持增量二进制或 SSE，转录与翻译可按上游能力转发 SSE。按次记账以对应音频完成事件或正常二进制结束为准，断流不扣费。归属：`backend/internal/service/openai_native_audio.go`、原生处理器及 HTTP 错误收尾。隔离 HTTP 与 PostgreSQL 已核对取消后成功、缺终止、二进制截断、Key 额度及订阅窗口；未涉及真实供应商、迁移或发布。
 - 当前为开发分支，未发布、未部署。真实供应商、真实费用和运行镜像联调仍待验证。
 - 同步上游时逐项核对是否已提供等价端点，特别注意原生流式输出、multipart 模型映射、渠道价格来源、缺失用量处理和重复请求编号不能漏扣费。
 

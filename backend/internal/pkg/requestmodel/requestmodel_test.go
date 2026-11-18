@@ -255,3 +255,14 @@ func TestFromBodyForRouteReturnsFirstCandidate(t *testing.T) {
 		t.Fatalf("dispatch helper keeps gjson-first semantics, got %q", got)
 	}
 }
+
+func TestModerationDefaultModelCandidates(t *testing.T) {
+	for _, path := range []string{"/v1/moderations", "/moderations"} {
+		for _, body := range []string{`{"input":"hello"}`, `{"model":null}`, `{"model":""}`, `{"session":{"model":"unrelated"}}`} {
+			models := FromBodyCandidates(path, "application/json", []byte(body))
+			if len(models) != 1 || models[0] != DefaultModerationModel {
+				t.Fatalf("path=%s body=%s candidates=%v", path, body, models)
+			}
+		}
+	}
+}

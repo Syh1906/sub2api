@@ -41,3 +41,17 @@ func TestNativeProtocolRoutesRespectModelAllowlist(t *testing.T) {
 		}
 	}
 }
+
+func TestNativeProtocolDefaultModerationRespectsAllowlist(t *testing.T) {
+	router := newGatewayRoutesTestRouterWithGroup(allowlistGroup(service.PlatformOpenAI, true, "different-model"))
+	for _, path := range []string{"/v1/moderations", "/moderations"} {
+		for _, body := range []string{`{"input":"hello"}`, `{"model":"","input":"hello"}`, `{"input":"hello","session":{"model":"different-model"}}`} {
+			req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+			require.Equal(t, 404, rec.Code, rec.Body.String())
+			require.Contains(t, rec.Body.String(), "omni-moderation-latest")
+		}
+	}
+}
