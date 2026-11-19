@@ -241,6 +241,7 @@ type tokenPriceOverrides struct {
 // LiteLLMModelPricing LiteLLM价格数据结构
 // 只保留我们需要的字段，使用指针来处理可能缺失的值
 type LiteLLMModelPricing struct {
+	vendorReference                     *VendorPriceReference
 	CacheCreationInputTokenCostExplicit bool `json:"-"`
 	priceOverrides                      tokenPriceOverrides
 	InputCostPerToken                   float64 `json:"input_cost_per_token"`
@@ -702,6 +703,13 @@ func (s *PricingService) parsePricingData(body []byte) (map[string]*LiteLLMModel
 	if err := json.Unmarshal(body, &rawData); err != nil {
 		return nil, fmt.Errorf("parse raw JSON: %w", err)
 	}
+	// Capture published fields before operator overrides are applied to the billing card.
+	references := make(map[string]*VendorPriceReference)
+	for name, raw := range rawData {
+		if ref := parseVendorReference(name, raw); ref != nil {
+			references[name] = ref
+		}
+	}
 	rawData, priceOverrides := s.applyPricingOverrides(rawData)
 
 	result := make(map[string]*LiteLLMModelPricing)
@@ -727,6 +735,7 @@ func (s *PricingService) parsePricingData(body []byte) (map[string]*LiteLLMModel
 		}
 
 		pricing := &LiteLLMModelPricing{
+			vendorReference:       references[modelName],
 			priceOverrides:        priceOverrides[modelName],
 			LiteLLMProvider:       entry.LiteLLMProvider,
 			Mode:                  entry.Mode,
@@ -1083,6 +1092,9 @@ func (s *PricingService) mergeOverrideOnlyModels(data map[string]*LiteLLMModelPr
 	// 对已存在条目做的自我修补是幂等的，不会二次改值。
 	if body, err := json.Marshal(leftover); err == nil {
 		if parsed, err := s.parsePricingData(body); err == nil {
+			for _, card := range parsed {
+				card.vendorReference = nil // An operator-only card has no published baseline.
+			}
 			maps.Copy(data, parsed)
 		}
 	}
@@ -1167,7 +1179,11 @@ func (s *PricingService) mergeFallbackPricingData(data map[string]*LiteLLMModelP
 	}
 	merged := 0
 	for modelName, pricing := range fallbackData {
-		if _, ok := data[modelName]; ok {
+		if current, ok := data[modelName]; ok {
+			// A shipped, attributed card can supply the independent reference without changing live rates.
+			if current.vendorReference == nil && current.LiteLLMProvider == pricing.LiteLLMProvider {
+				current.vendorReference = pricing.vendorReference
+			}
 			continue
 		}
 		data[modelName] = pricing

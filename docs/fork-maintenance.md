@@ -19,6 +19,12 @@
 
 ## 自有功能与修复
 
+### 带来源的模型基础参考价（v0.2.22-fork.4）
+
+管理员通过 `GET /api/v1/admin/channels/model-reference-price?model=…` 查看指定型号的厂商目录参考。精确匹配且引用对应厂商资料时返回 `data.reference`，内含模型名、来源链接及有依据的每 Token 美元单价；未找到时为 null。模型广场的对应条目可含同一份 `vendor_reference`。原有查价接口及扣费逻辑继续提供既有行为。
+
+服务在应用运营价覆盖前保留参考字段，按精确目录键查找。缺失的价格字段不返回，厂商列出的零值保留为 0；运营自建条目和通用系列回退不能作为厂商参考。已核对 [GPT-4.1 的标准文本价格](https://developers.openai.com/api/docs/models/gpt-4.1)，为随附目录中相应两条记录补充来源。实现与回归用例见 [价格读取](../backend/internal/service/vendor_price_reference.go)、[参考价测试](../backend/internal/service/vendor_price_reference_test.go)。无数据库迁移。
+
 ### 原生请求编号、翻页与 Key 写入核对（2026-11-19，v0.2.22-fork.3）
 
 - 客户请求追踪以响应头 `X-Client-Request-Id` 查询常规网关及原生文本补全的新增成功记录。用量详情的 `customer_request_id` 与追踪列表一致，原 `request_id` 保留计费编号，重复的客户编号不合并扣费。迁移 252 为 `usage_logs` 增加可空字段。历史记录保留可以从原编号确定的值，旧原生记录只能使用已存的计费编号。

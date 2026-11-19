@@ -641,6 +641,16 @@ func (h *ChannelHandler) GetModelDefaultPricing(c *gin.Context) {
 	})
 }
 
+// GetVendorReferencePrice returns the attributed catalog card for this exact model.
+func (h *ChannelHandler) GetVendorReferencePrice(c *gin.Context) {
+	name := strings.TrimSpace(c.Query("model"))
+	if name == "" {
+		response.ErrorFrom(c, infraerrors.BadRequest("MISSING_PARAMETER", "model parameter is required"))
+		return
+	}
+	response.Success(c, gin.H{"reference": h.pricingService.VendorReference(name)})
+}
+
 // platformLiteLLMProvider maps a channel platform name to the corresponding
 // LiteLLM provider string used as the key in the pricing catalog (platform list).
 func platformLiteLLMProvider(platform string) (string, bool) {

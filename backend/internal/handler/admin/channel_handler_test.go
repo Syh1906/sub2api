@@ -6,9 +6,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -633,4 +636,35 @@ func TestGetModelDefaultPricing_OmitsUnsupportedCache1hPrice(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
 	require.True(t, body.Data.Found)
 	require.Nil(t, body.Data.CacheWrite1hPrice)
+}
+
+func TestVendorReferencePriceHTTP(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Pricing.DataDir = t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(cfg.Pricing.DataDir, "model_pricing.json"), []byte(`{"gpt-4.1":{"source":"https://developers.openai.com/api/docs/models/gpt-4.1","litellm_provider":"openai","input_cost_per_token":0.000002,"output_cost_per_token":0.000008,"output_cost_per_image_token":0}}`), 0600))
+	svc := service.NewPricingService(cfg, nil)
+	require.NoError(t, svc.Initialize())
+	t.Cleanup(svc.Stop)
+	h := ChannelHandler{pricingService: svc}
+	router := gin.New()
+	router.GET("/reference", h.GetVendorReferencePrice)
+	for _, name := range []string{"gpt-4.1", "claude-unknown-model"} {
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/reference?model="+name, nil))
+		require.Equal(t, http.StatusOK, w.Code)
+		var result struct {
+			Data struct {
+				Reference *service.VendorPriceReference `json:"reference"`
+			} `json:"data"`
+		}
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &result))
+		if name == "gpt-4.1" {
+			require.NotNil(t, result.Data.Reference)
+			require.Equal(t, 0.000002, *result.Data.Reference.Input)
+			require.Equal(t, 0.0, *result.Data.Reference.ImageOutput)
+			require.Nil(t, result.Data.Reference.ImageInput)
+		} else {
+			require.Nil(t, result.Data.Reference)
+		}
+	}
 }
