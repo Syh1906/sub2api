@@ -67,7 +67,7 @@ func (s *PaymentService) TextOffers(ctx context.Context) ([]TextOffer, error) {
 }
 func (c *creemClient) call(ctx context.Context, method, path string, input, output any) error {
 	if c.base == "" || c.key == "" {
-		return fmt.Errorf("Creem is not configured")
+		return fmt.Errorf("creem is not configured")
 	}
 	var body io.Reader
 	if input != nil {
@@ -85,11 +85,11 @@ func (c *creemClient) call(ctx context.Context, method, path string, input, outp
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("Creem request did not complete: %w", err)
+		return fmt.Errorf("creem request did not complete: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("Creem returned HTTP %d", resp.StatusCode)
+		return fmt.Errorf("creem returned HTTP %d", resp.StatusCode)
 	}
 	return json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(output)
 }

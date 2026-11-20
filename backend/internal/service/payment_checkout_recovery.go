@@ -154,5 +154,7 @@ func (s *PaymentService) sealCheckout(result *CreateOrderResponse) (string, erro
 	if err != nil {
 		return "", err
 	}
-	return base64.RawStdEncoding.EncodeToString(aead.Seal(nil, nil, raw, nil)), nil
+	// NewGCMWithRandomNonce generates a fresh nonce internally and requires an empty nonce argument.
+	sealed := aead.Seal(nil, nil, raw, nil) //nolint:gosec // G407: the AEAD generates and prepends the random nonce.
+	return base64.RawStdEncoding.EncodeToString(sealed), nil
 }
