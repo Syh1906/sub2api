@@ -37,7 +37,7 @@ func TestAPIKeyAuthRejectsOversizedCredentialsBeforeLookup(t *testing.T) {
 		{"Authorization": strings.Repeat("x", maxAPIKeyAuthorizationHeaderBytes+1)},
 	} {
 		r := gin.New()
-		r.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(svc, nil, cfg)))
+		r.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(svc, nil, cfg, nil)))
 		r.GET("/t", func(c *gin.Context) { c.Status(http.StatusOK) })
 		w := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/t", nil)
@@ -75,7 +75,7 @@ func TestAPIKeyAuthLookupFailureWhenClientGoneReturns499(t *testing.T) {
 			svc := service.NewAPIKeyService(repo, nil, nil, nil, nil, nil, cfg)
 
 			for _, mw := range []gin.HandlerFunc{
-				gin.HandlerFunc(NewAPIKeyAuthMiddleware(svc, nil, cfg)),
+				gin.HandlerFunc(NewAPIKeyAuthMiddleware(svc, nil, cfg, nil)),
 				APIKeyAuthWithSubscriptionGoogle(svc, nil, cfg),
 			} {
 				var ctx context.Context
@@ -105,7 +105,7 @@ func TestAPIKeyAuthRejectsNonUTF8KeyAsInvalid(t *testing.T) {
 	svc := service.NewAPIKeyService(repo, nil, nil, nil, nil, nil, cfg)
 
 	r := gin.New()
-	r.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(svc, nil, cfg)))
+	r.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(svc, nil, cfg, nil)))
 	r.GET("/t", func(c *gin.Context) { c.Status(http.StatusOK) })
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/t", nil)
@@ -374,7 +374,7 @@ func TestAPIKeyAuthSetsGroupContext(t *testing.T) {
 	cfg := &config.Config{RunMode: config.RunModeSimple}
 	apiKeyService := service.NewAPIKeyService(apiKeyRepo, nil, nil, nil, nil, nil, cfg)
 	router := gin.New()
-	router.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(apiKeyService, nil, cfg)))
+	router.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(apiKeyService, nil, cfg, nil)))
 	router.GET("/t", func(c *gin.Context) {
 		groupFromCtx, ok := c.Request.Context().Value(ctxkey.Group).(*service.Group)
 		if !ok || groupFromCtx == nil || groupFromCtx.ID != group.ID {
@@ -488,7 +488,7 @@ func TestAPIKeyAuthOverwritesInvalidContextGroup(t *testing.T) {
 	cfg := &config.Config{RunMode: config.RunModeSimple}
 	apiKeyService := service.NewAPIKeyService(apiKeyRepo, nil, nil, nil, nil, nil, cfg)
 	router := gin.New()
-	router.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(apiKeyService, nil, cfg)))
+	router.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(apiKeyService, nil, cfg, nil)))
 
 	invalidGroup := &service.Group{
 		ID:       group.ID,
@@ -617,7 +617,7 @@ func TestAPIKeyAuthRejectsUnavailableGroup(t *testing.T) {
 					businessLimitedReason, _ = v.(string)
 				}
 			})
-			router.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(apiKeyService, nil, cfg)))
+			router.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(apiKeyService, nil, cfg, nil)))
 			router.GET("/t", func(c *gin.Context) {
 				c.JSON(http.StatusOK, gin.H{"ok": true})
 			})
@@ -726,7 +726,7 @@ func TestAPIKeyAuthMarksOnlyExpectedIngressRejections(t *testing.T) {
 				c.Next()
 				reason, rejected = GetIngressRejectReason(c)
 			})
-			router.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(apiKeyService, nil, cfg)))
+			router.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(apiKeyService, nil, cfg, nil)))
 			router.GET("/t", func(c *gin.Context) { c.Status(http.StatusOK) })
 
 			w := httptest.NewRecorder()
@@ -792,7 +792,7 @@ func TestAPIKeyAuthSetsOpsFallbackKeyOnEarlyAbort(t *testing.T) {
 		c.Next()
 		fallback, fallbackOK = GetOpsFallbackAPIKey(c)
 	})
-	router.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(apiKeyService, nil, cfg)))
+	router.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(apiKeyService, nil, cfg, nil)))
 	router.GET("/t", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 	})
@@ -970,7 +970,7 @@ func TestAPIKeyAuthIPRestrictionUsesTrustedPathWhenSwitchDisabled(t *testing.T) 
 			businessLimitedReason, _ = v.(string)
 		}
 	})
-	router.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(apiKeyService, nil, cfg)))
+	router.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(apiKeyService, nil, cfg, nil)))
 	router.GET("/t", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 	})
@@ -1023,7 +1023,7 @@ func TestAPIKeyAuthIPRestrictionIncludesClientIPForBlacklistDenial(t *testing.T)
 	apiKeyService := service.NewAPIKeyService(apiKeyRepo, nil, nil, nil, nil, nil, cfg)
 	router := gin.New()
 	require.NoError(t, router.SetTrustedProxies(nil))
-	router.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(apiKeyService, nil, cfg)))
+	router.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(apiKeyService, nil, cfg, nil)))
 	router.GET("/t", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 	})
@@ -1072,7 +1072,7 @@ func TestAPIKeyAuthIPRestrictionUsesConfiguredTrustedProxy(t *testing.T) {
 	apiKeyService := service.NewAPIKeyService(apiKeyRepo, nil, nil, nil, nil, nil, cfg)
 	router := gin.New()
 	require.NoError(t, router.SetTrustedProxies([]string{"9.9.9.9"}))
-	router.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(apiKeyService, nil, cfg)))
+	router.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(apiKeyService, nil, cfg, nil)))
 	router.GET("/t", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 	})
@@ -1123,7 +1123,7 @@ func TestAPIKeyAuthIPRestrictionUsesForwardedClientIPInDenialWhenTrusted(t *test
 	apiKeyService := service.NewAPIKeyService(apiKeyRepo, nil, nil, nil, nil, nil, cfg)
 	router := gin.New()
 	require.NoError(t, router.SetTrustedProxies([]string{"9.9.9.9"}))
-	router.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(apiKeyService, nil, cfg)))
+	router.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(apiKeyService, nil, cfg, nil)))
 	router.GET("/t", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 	})
@@ -1565,7 +1565,7 @@ func TestAPIKeyAuthQuotaErrorKeepsLegacyFormatOutsideResponses(t *testing.T) {
 
 func newAuthTestRouter(apiKeyService *service.APIKeyService, subscriptionService *service.SubscriptionService, cfg *config.Config) *gin.Engine {
 	router := gin.New()
-	router.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(apiKeyService, subscriptionService, cfg)))
+	router.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(apiKeyService, subscriptionService, cfg, nil)))
 	ok := func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 	}
@@ -1855,4 +1855,40 @@ func (r *stubUserSubscriptionRepo) IncrementUsage(ctx context.Context, id int64,
 
 func (r *stubUserSubscriptionRepo) BatchUpdateExpiredStatus(ctx context.Context) (int64, error) {
 	return 0, errors.New("not implemented")
+}
+
+func TestPaidVideoReadWithExhaustedKey(t *testing.T) {
+	const paid = "18f0ea74-cc8a-46cd-993b-d966d44a5240"
+	const unpaid = "4f8e8d29-d8c8-456e-a899-62c4977e006d"
+	for _, tc := range []struct {
+		method, route, id, status string
+		want                      int
+	}{
+		{http.MethodGet, "/v1/videos/:request_id", paid, service.StatusAPIKeyQuotaExhausted, 200},
+		{http.MethodGet, "/v1/videos/:request_id/content", paid, service.StatusAPIKeyQuotaExhausted, 200},
+		{http.MethodDelete, "/videos/:request_id", paid, service.StatusAPIKeyQuotaExhausted, 200},
+		{http.MethodGet, "/v1/videos/:request_id", unpaid, service.StatusAPIKeyQuotaExhausted, 429},
+		{http.MethodPost, "/v1/videos", "", service.StatusAPIKeyQuotaExhausted, 429},
+		{http.MethodGet, "/v1/videos/:request_id", paid, service.StatusAPIKeyExpired, 403},
+		{http.MethodGet, "/v1/videos/:request_id", paid, service.StatusDisabled, 401},
+	} {
+		t.Run(tc.method+tc.route+tc.id+tc.status, func(t *testing.T) {
+			group := &service.Group{ID: 8, Platform: service.PlatformOpenAI, Status: service.StatusActive}
+			key := &service.APIKey{ID: 9, UserID: 1, User: &service.User{ID: 1, Status: service.StatusActive}, GroupID: &group.ID, Group: group, Status: tc.status, Quota: 1, QuotaUsed: 1, Key: "test-key"}
+			repo := &stubApiKeyRepo{getByKey: func(context.Context, string) (*service.APIKey, error) { return key, nil }}
+			cfg := &config.Config{RunMode: config.RunModeStandard}
+			svc := service.NewAPIKeyService(repo, nil, nil, nil, nil, nil, cfg)
+			lookup := func(ctx context.Context, keyID int64, id string) (bool, error) {
+				return keyID == key.ID && id == paid, nil
+			}
+			router := gin.New()
+			router.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(svc, nil, cfg, lookup)))
+			router.Handle(tc.method, tc.route, func(c *gin.Context) { require.True(t, IsPaidStandardVideoLookup(c)); c.Status(200) })
+			req := httptest.NewRequest(tc.method, strings.Replace(tc.route, ":request_id", tc.id, 1), nil)
+			req.Header.Set("x-api-key", key.Key)
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+			require.Equal(t, tc.want, w.Code, w.Body.String())
+		})
+	}
 }

@@ -61,3 +61,8 @@ func prepareSeedanceCompletionBilling(ctx context.Context, h *OpenAIGatewayHandl
 	merged.Duration = service.GrokVideoE2EDuration(pending.CreatedAt, time.Now())
 	return &merged
 }
+
+// StandardVideo shares media admission and sticky-account selection with native tasks.
+func (h *OpenAIGatewayHandler) StandardVideo(c *gin.Context, endpoint service.GrokMediaEndpoint) {
+	h.handleGrokMedia(c, endpoint, c.Param("request_id"))
+}

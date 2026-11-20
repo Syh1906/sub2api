@@ -14,6 +14,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -23,8 +24,8 @@ const maxAPIKeyAuthorizationHeaderBytes = service.MaxAPIKeyCredentialBytes + 128
 const statusClientClosedRequest = 499
 
 // NewAPIKeyAuthMiddleware 创建 API Key 认证中间件
-func NewAPIKeyAuthMiddleware(apiKeyService *service.APIKeyService, subscriptionService *service.SubscriptionService, cfg *config.Config) APIKeyAuthMiddleware {
-	return APIKeyAuthMiddleware(apiKeyAuthWithSubscription(apiKeyService, subscriptionService, cfg))
+func NewAPIKeyAuthMiddleware(apiKeyService *service.APIKeyService, subscriptionService *service.SubscriptionService, cfg *config.Config, videoReceipt service.StandardVideoReceiptLookup) APIKeyAuthMiddleware {
+	return APIKeyAuthMiddleware(apiKeyAuthWithSubscription(apiKeyService, subscriptionService, cfg, videoReceipt))
 }
 
 // apiKeyAuthWithSubscription API Key认证中间件（支持订阅验证）
@@ -36,7 +37,7 @@ func NewAPIKeyAuthMiddleware(apiKeyService *service.APIKeyService, subscriptionS
 // /v1/usage、/v1/sub2api/billing 端点与异步生图任务查询只需鉴权，不需要计费执行。
 // usage 允许过期/配额耗尽的 Key 查询自身用量，billing 用于读取当前 Key 的倍率配置，
 // 异步生图查询允许已耗尽额度的 Key 拉取自身任务结果。
-func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscriptionService *service.SubscriptionService, cfg *config.Config) gin.HandlerFunc {
+func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscriptionService *service.SubscriptionService, cfg *config.Config, videoReceipt service.StandardVideoReceiptLookup) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// ── 1. 提取 API Key ──────────────────────────────────────────
 		if rejectInvalidAuthAbuse(c, apiKeyService) {
@@ -177,7 +178,18 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		// Async image task polling only reads data that already belongs to the
 		// authenticated key and must remain available after the completed
 		// generation consumes the key's remaining balance.
-		skipBilling := c.Request.URL.Path == "/v1/usage" || billingInfoRequest || isAsyncImageTaskRead(c.Request.Method, c.Request.URL.Path)
+		paidVideo := false
+		if cfg.RunMode != config.RunModeSimple || (cfg.SimpleModeKeyRateLimitEnabled && apiKey.HasRateLimits()) {
+			paidVideo, err = lookupPaidStandardVideo(c, apiKey, videoReceipt)
+		}
+		if err != nil {
+			AbortWithError(c, http.StatusServiceUnavailable, "VIDEO_RECEIPT_UNAVAILABLE", "Video billing receipt unavailable")
+			return
+		}
+		if paidVideo {
+			c.Set(paidStandardVideoContextKey, true)
+		}
+		skipBilling := c.Request.URL.Path == "/v1/usage" || billingInfoRequest || isAsyncImageTaskRead(c.Request.Method, c.Request.URL.Path) || paidVideo
 
 		// ── 4. SimpleMode → early return ─────────────────────────────
 
@@ -339,6 +351,35 @@ func isOpenAICompatibleAPIKeyRequest(c *gin.Context) bool {
 		}
 	}
 	return false
+}
+
+const paidStandardVideoContextKey = "sub2api.paid_standard_video"
+
+func IsPaidStandardVideoLookup(c *gin.Context) bool {
+	return c.GetBool(paidStandardVideoContextKey)
+}
+
+func lookupPaidStandardVideo(c *gin.Context, key *service.APIKey, lookup service.StandardVideoReceiptLookup) (bool, error) {
+	if lookup == nil || key.Group == nil || key.Group.Platform != service.PlatformOpenAI || key.GroupID == nil || key.IsExpired() || key.Status == service.StatusAPIKeyExpired {
+		return false, nil
+	}
+	switch c.FullPath() {
+	case "/v1/videos/:request_id", "/videos/:request_id":
+		if c.Request.Method != http.MethodGet && c.Request.Method != http.MethodDelete {
+			return false, nil
+		}
+	case "/v1/videos/:request_id/content", "/videos/:request_id/content":
+		if c.Request.Method != http.MethodGet {
+			return false, nil
+		}
+	default:
+		return false, nil
+	}
+	id := c.Param("request_id")
+	if _, err := uuid.Parse(id); err != nil {
+		return false, nil
+	}
+	return lookup(c.Request.Context(), key.ID, id)
 }
 
 func isAsyncImageTaskRead(method, path string) bool {

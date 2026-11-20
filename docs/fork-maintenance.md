@@ -25,6 +25,18 @@
 
 ## 自有功能与修复
 
+### 普通 OpenAI 分组的标准视频任务
+
+运营者可通过账号管理 API，在使用自定义 `base_url` 的 OpenAI API Key 账号的 `credentials.openai_capabilities` 中加入 `standard_videos`。上游须接受标准 `/v1/videos`，并在成功结果中返回整数 `usage.completion_tokens`。分组须允许媒体生成，并为对应模型在分组或渠道价目中配置固定的每输出 token 单价。方舟原生账号继续使用 `seedance` 和原生任务路径。
+
+客户可用 JSON 或 multipart 表单提交 `model`、`prompt`，并可指定 `seconds`、`size`。创建返回的任务 ID 绑定客户、Key、分组和原上游账号，绑定保留七天。首次查询到成功（含下载、删除前的状态查询）时，服务按创建时的模型输出单价和供应商报告的用量结算。客户从未查询的任务不会由后台自动结算。排队、运行、失败和过期均无成功用量扣费；成功响应缺少有效用量时返回 502。创建遇到不确定的上游响应时，不自动重新提交。
+
+标准视频的扣费、额度和用量明细在同一数据库事务内提交。临时写入失败时可以继续查询原任务。恢复后仅扣一次，明细显示实际扣除的金额。已结算的任务按客户、Key、分组和上游账号校验归属，有效 Key 即使用完额度也可重查、下载或删除终态任务。普通模式仍执行用户和分组的每分钟请求上限。结算凭据支持从归档读取，清理客户用量明细不影响任务有效期内的已付款读回。新任务和尚未结算的任务仍需通过消费准入。
+
+客户可以从成功状态的 `video_url` 获取成品。标准 `GET /v1/videos/{id}/content` 要求上游提供二进制下载接口。标准 DELETE 支持删除已结束的任务；排队和运行状态返回 409。部分供应商使用同一条 DELETE 取消排队或删除已完成记录，客户在任务结束前应保留任务 ID 查询最终结果。
+
+实现见[标准视频服务](../backend/internal/service/standard_video.go)和[网关路由](../backend/internal/server/routes/gateway.go)。Linux amd64 隔离验证覆盖成功、失败、过期、并发查询、跨客户访问、成品链接和终态删除。两个客户共用一个分组时，12,345 个输出 token 按每百万 token 计 2 个测试金额单位，账本产生一笔 0.02469，另一位客户的余额保持原值。
+
 ### Gemini 显式缓存续期结果未确认时的恢复
 
 支持显式缓存的上游网关可能已经向供应商延长有效期，但无法确认结果。对 AxonHub 返回的 HTTP 502，sub2api 在 `error.status` 为 `UNKNOWN`、`google.rpc.ErrorInfo` 中的 `domain` 为 `axonhub` 且 `reason` 为 `GEMINI_CACHE_RENEWAL_OUTCOME_UNKNOWN` 时，保留原到期时间和恢复记录，并将网关响应返回客户端。

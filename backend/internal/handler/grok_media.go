@@ -54,7 +54,10 @@ func (h *OpenAIGatewayHandler) GrokVideoContent(c *gin.Context) {
 func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.GrokMediaEndpoint, requestID string) {
 	platform := service.PlatformGrok
 	noAccountCode, noAccountMessage := "grok_media_no_eligible_account", "No eligible Grok media accounts"
-	if endpoint.IsSeedance() {
+	if endpoint.IsStandardVideo() {
+		platform = service.PlatformOpenAI
+		noAccountCode, noAccountMessage = "standard_video_no_eligible_account", "No eligible standard video account"
+	} else if endpoint.IsSeedance() {
 		platform = service.PlatformOpenAI
 		noAccountCode, noAccountMessage = "seedance_no_eligible_account", "No eligible Seedance accounts"
 	}
@@ -104,13 +107,18 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 	}
 
 	contentType := c.GetHeader("Content-Type")
-	requestInfo := service.ParseGrokMediaRequest(contentType, body)
-	if endpoint == service.SeedanceEndpointCreate {
+	var requestInfo service.GrokMediaRequestInfo
+	switch endpoint {
+	case service.StandardVideoCreate:
+		body, requestInfo, err = service.NormalizeStandardVideoCreate(contentType, body)
+	case service.SeedanceEndpointCreate:
 		requestInfo, err = service.ParseSeedanceRequest(body)
-		if err != nil {
-			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
-			return
-		}
+	default:
+		requestInfo = service.ParseGrokMediaRequest(contentType, body)
+	}
+	if err != nil {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
+		return
 	}
 	requestModel := requestInfo.Model
 	routingModel := service.NormalizeGrokMediaModelForEndpoint(endpoint, requestModel, requestInfo.HasInputImage())
@@ -163,7 +171,13 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		defer userReleaseFunc()
 	}
 
-	if err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription, service.QuotaPlatform(c.Request.Context(), apiKey)); err != nil {
+	alreadySettled := endpoint.IsStandardVideo() && middleware2.IsPaidStandardVideoLookup(c)
+	if alreadySettled {
+		err = h.billingCacheService.CheckPaidVideoRead(c.Request.Context(), apiKey.User, apiKey.Group)
+	} else {
+		err = h.billingCacheService.CheckBillingEligibility(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription, service.QuotaPlatform(c.Request.Context(), apiKey))
+	}
+	if err != nil {
 		reqLog.Info("grok_media.billing_eligibility_check_failed", zap.Error(err))
 		status, code, message, retryAfter := billingErrorDetails(err)
 		if retryAfter > 0 {
@@ -172,26 +186,39 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		h.errorResponse(c, status, code, message)
 		return
 	}
-
-	// 余额模式在途预留（与计费同口径估算；计费任务扣减余额缓存后才释放）。
-	inflightDone, inflightErr := reserveInflightBalance(c, h.billingCacheService, h.gatewayService, apiKey, subscription, grokMediaInflightEstimate(endpoint, routingModel, requestInfo, body))
-	if inflightErr != nil {
-		status, code, message, retryAfter := billingErrorDetails(inflightErr)
-		if retryAfter > 0 {
-			c.Header("Retry-After", strconv.Itoa(retryAfter))
+	if !alreadySettled {
+		// 余额模式在途预留（与计费同口径估算；计费任务扣减余额缓存后才释放）。
+		inflightDone, inflightErr := reserveInflightBalance(c, h.billingCacheService, h.gatewayService, apiKey, subscription, grokMediaInflightEstimate(endpoint, routingModel, requestInfo, body))
+		if inflightErr != nil {
+			status, code, message, retryAfter := billingErrorDetails(inflightErr)
+			if retryAfter > 0 {
+				c.Header("Retry-After", strconv.Itoa(retryAfter))
+			}
+			h.errorResponse(c, status, code, message)
+			return
 		}
-		h.errorResponse(c, status, code, message)
-		return
+		defer inflightDone()
 	}
-	defer inflightDone()
-
 	sessionSeed := body
 	if len(sessionSeed) == 0 && strings.TrimSpace(requestID) != "" {
 		sessionSeed = []byte(requestID)
 	}
 	sessionHash := h.gatewayService.GenerateExplicitSessionHash(c, sessionSeed)
 	boundLookupAccountID := int64(0)
-	if endpoint.IsVideoLookupRequest() {
+	var videoTask *service.StandardVideoTask
+	if endpoint.IsStandardVideo() && endpoint.IsVideoLookupRequest() {
+		videoTask, err = h.gatewayService.LoadStandardVideoTask(c.Request.Context(), apiKey, requestID)
+		if err != nil {
+			h.errorResponse(c, 503, "api_error", "Video task storage unavailable")
+			return
+		}
+		if videoTask == nil {
+			h.errorResponse(c, 404, "not_found_error", "Video request not found")
+			return
+		}
+		boundLookupAccountID = videoTask.AccountID
+		sessionHash = service.GrokMediaVideoRequestSessionHash(requestID, subject.UserID, apiKey.ID)
+	} else if endpoint.IsVideoLookupRequest() {
 		sessionHash = service.GrokMediaVideoRequestSessionHash(requestID, subject.UserID, apiKey.ID)
 		boundLookupAccountID, err = h.gatewayService.ResolveGrokMediaVideoRequestAccount(
 			c.Request.Context(), apiKey.GroupID, requestID, subject.UserID, apiKey.ID,
@@ -206,6 +233,18 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 	// 范围内：显式豁免，防止 service 层防御性装门按文本 D 误过滤媒体请求，
 	// 也防止已计费的在途视频任务因绑定账号被门排除而查询返回伪 404。
 	requestCtx := service.WithOpenAIProfitControlSuppressed(c.Request.Context())
+	var videoMapping service.ChannelMappingResult
+	if endpoint == service.StandardVideoCreate {
+		requestCtx, _ = h.gatewayService.WithOpenAIRequestPricingContext(c.Request.Context(), apiKey.GroupID)
+		c.Request = c.Request.WithContext(requestCtx)
+		var restricted bool
+		videoMapping, restricted = h.gatewayService.ResolveChannelMappingAndRestrict(requestCtx, apiKey.GroupID, requestModel)
+		if restricted {
+			h.errorResponse(c, http.StatusForbidden, "permission_error", "Video model is restricted")
+			return
+		}
+		routingModel = openAIChannelForwardModel(videoMapping, requestModel)
+	}
 	profitVetoCount := 0
 	failedAccountIDs := make(map[int64]struct{})
 	sameAccountRetryCount := make(map[int64]int)
@@ -255,7 +294,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 				requiredCapability,
 				false,
 				false,
-				false,
+				endpoint == service.StandardVideoCreate,
 				platform,
 			)
 		}
@@ -334,7 +373,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		)
 
 		account := selection.Account
-		if endpoint.IsGenerationRequest() && !endpoint.IsSeedance() {
+		if endpoint.IsGenerationRequest() && !endpoint.IsSeedance() && !endpoint.IsStandardVideo() {
 			eligible, eligibilityReason, eligibilityErr := h.ensureGrokMediaAccountEligibility(requestCtx, account)
 			if !eligible {
 				releaseAccount()
@@ -385,6 +424,19 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		writerSizeBeforeForward := c.Writer.Size()
 		result, err := func() (*service.OpenAIForwardResult, error) {
 			defer releaseAccount()
+			if endpoint.IsStandardVideo() {
+				input := service.OpenAIRecordUsageInput{
+					APIKey:           apiKey,
+					User:             apiKey.User,
+					Account:          account,
+					Subscription:     subscription,
+					APIKeyService:    h.apiKeyService,
+					InboundEndpoint:  "/v1/videos",
+					UpstreamEndpoint: "/v1/videos",
+					QuotaPlatform:    service.QuotaPlatform(requestCtx, apiKey),
+				}
+				return nil, h.gatewayService.ForwardStandardVideo(requestCtx, c, endpoint, requestID, videoTask, body, videoMapping, input, alreadySettled)
+			}
 			if endpoint.IsSeedance() {
 				return h.gatewayService.ForwardSeedance(requestCtx, c, account, endpoint, requestID, body)
 			}
@@ -553,6 +605,9 @@ func (h *OpenAIGatewayHandler) ensureGrokMediaAccountEligibility(ctx context.Con
 }
 
 func grokMediaRequiredCapability(endpoint service.GrokMediaEndpoint) service.OpenAIEndpointCapability {
+	if endpoint.IsStandardVideo() {
+		return service.OpenAIEndpointCapabilityStandardVideos
+	}
 	if endpoint.IsSeedance() {
 		return service.OpenAIEndpointCapabilitySeedance
 	}

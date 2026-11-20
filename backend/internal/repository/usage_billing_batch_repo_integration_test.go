@@ -22,6 +22,7 @@ import (
 // （P 设总额度与日额度，Q 只设周额度）和一个订阅。
 type batchBillingFixture struct {
 	userID         int64
+	groupID        int64
 	keyA, keyB     int64
 	accountP       int64
 	accountQ       int64
@@ -59,7 +60,7 @@ func newBatchBillingFixture(t *testing.T, client *dbent.Client, balance float64)
 	})
 	subscription := mustCreateSubscription(t, client, &service.UserSubscription{UserID: user.ID, GroupID: group.ID})
 	return batchBillingFixture{
-		userID: user.ID, keyA: keyA.ID, keyB: keyB.ID,
+		userID: user.ID, groupID: group.ID, keyA: keyA.ID, keyB: keyB.ID,
 		accountP: accountP.ID, accountQ: accountQ.ID, subscriptionID: subscription.ID,
 	}
 }
@@ -464,4 +465,61 @@ func TestAccountRepositoryBatchUpdateLastUsed_DoesNotBlockForeignKeyShareLocks(t
 	var lastUsed sql.NullTime
 	require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT last_used_at FROM accounts WHERE id = $1", acc.ID).Scan(&lastUsed))
 	require.True(t, lastUsed.Valid)
+}
+
+func TestStandardVideoChargeAndReceiptCommitTogether(t *testing.T) {
+	ctx := context.Background()
+	client := testEntClient(t)
+	repo := NewUsageBillingRepository(client, integrationDB)
+	lookup := NewStandardVideoReceiptLookup(integrationDB)
+	for _, mode := range []string{"single", "batch"} {
+		t.Run(mode, func(t *testing.T) {
+			f := newBatchBillingFixture(t, client, 100)
+			id := uuid.NewString()
+			cmd := f.commands("video", []batchBillingStep{{balance: 0.02469, keyQuota: 0.02469}})[0]
+			cmd.RequestID = service.StandardVideoBillingID(id)
+			cmd.UsageLog = &service.UsageLog{RequestID: cmd.RequestID, UserID: f.userID, APIKeyID: f.keyA,
+				AccountID: f.accountP, GroupID: &f.groupID, OutputTokens: 12345, ActualCost: 0.02469}
+
+			apply := func() error {
+				if mode == "batch" {
+					_, err := repo.ApplyBatch(ctx, []*service.UsageBillingCommand{cmd})
+					return err
+				}
+				_, err := repo.Apply(ctx, cmd)
+				return err
+			}
+			// PostgreSQL rejects this receipt after the debit statements have run.
+			cmd.UsageLog.Model = "video\x00"
+			require.Error(t, apply())
+			state := readBatchBillingState(t, ctx, f)
+			require.Equal(t, "100.00000000", state.balance)
+			require.Zero(t, state.dedupRows)
+			cmd.UsageLog.Model = "video"
+			// Retry a charge whose old failed attempt left a zero-cost usage row.
+			previous := *cmd.UsageLog
+			previous.ActualCost = 0
+			require.NoError(t, execUsageLogInsertNoResult(ctx, integrationDB, prepareUsageLogInsert(&previous)))
+			require.NoError(t, apply())
+			require.NoError(t, apply())
+			state = readBatchBillingState(t, ctx, f)
+			require.Equal(t, "99.97531000", state.balance)
+			require.Equal(t, "0.02469000", state.keyAUsed)
+			require.Equal(t, 1, state.dedupRows)
+			var amount float64
+			require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT actual_cost FROM usage_logs WHERE request_id=$1 AND api_key_id=$2", cmd.RequestID, f.keyA).Scan(&amount))
+			require.Equal(t, 0.02469, amount)
+			settled, err := lookup(ctx, f.keyA, id)
+			require.NoError(t, err)
+			require.True(t, settled)
+			settled, err = lookup(ctx, f.keyB, id)
+			require.NoError(t, err)
+			require.False(t, settled)
+			_, err = integrationDB.ExecContext(ctx, "DELETE FROM usage_logs WHERE request_id=$1 AND api_key_id=$2", cmd.RequestID, f.keyA)
+			require.NoError(t, err)
+			settled, err = lookup(ctx, f.keyA, id)
+			require.NoError(t, err)
+			require.True(t, settled)
+		})
+	}
 }

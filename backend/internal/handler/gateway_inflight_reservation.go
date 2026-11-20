@@ -122,6 +122,8 @@ func grokMediaInflightEstimate(endpoint service.GrokMediaEndpoint, model string,
 		return service.InflightEstimateRequest{}
 	}
 	switch endpoint {
+	case service.StandardVideoCreate:
+		return tokenInflightEstimate(model, body)
 	case service.GrokMediaEndpointImagesGenerations, service.GrokMediaEndpointImagesEdits:
 		return service.InflightEstimateRequest{Model: model, BodyBytes: len(body), Kind: service.InflightEstimateImage, Units: info.N}
 	default:

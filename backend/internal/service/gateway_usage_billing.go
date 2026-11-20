@@ -74,6 +74,7 @@ type usageLogBestEffortWriter interface {
 
 // postUsageBillingParams 统一扣费所需的参数
 type postUsageBillingParams struct {
+	atomicUsageLog        *UsageLog
 	Cost                  *CostBreakdown
 	User                  *User
 	APIKey                *APIKey
@@ -250,6 +251,7 @@ func isForcedUsageBillingRequestID(requestID string) bool {
 	return strings.HasPrefix(id, "native_protocol:") ||
 		strings.HasPrefix(id, "web_search:") ||
 		strings.HasPrefix(id, "grok-video:") ||
+		strings.HasPrefix(id, "standard-video:") ||
 		strings.HasPrefix(id, "grok_audio:") ||
 		strings.HasPrefix(id, "grok_realtime:") ||
 		strings.HasPrefix(id, GeminiCachedContentUsageRequestIDPrefix)
@@ -302,6 +304,7 @@ func buildUsageBillingCommand(requestID string, usageLog *UsageLog, p *postUsage
 	}
 
 	cmd := &UsageBillingCommand{
+		UsageLog:           p.atomicUsageLog,
 		RequestID:          requestID,
 		APIKeyID:           p.APIKey.ID,
 		UserID:             p.User.ID,
@@ -370,6 +373,9 @@ func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog
 
 	cmd := buildUsageBillingCommand(requestID, usageLog, p)
 	if cmd == nil || cmd.RequestID == "" || repo == nil {
+		if p.atomicUsageLog != nil {
+			return false, errors.New("atomic usage billing repository unavailable")
+		}
 		if p.SimpleModeKeyRateLimitOnly {
 			return false, ErrSimpleModeKeyRateLimitBillingUnavailable
 		}

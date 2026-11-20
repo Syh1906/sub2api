@@ -790,6 +790,14 @@ func (s *BillingCacheService) CheckBillingEligibility(ctx context.Context, user 
 	return nil
 }
 
+// CheckPaidVideoRead preserves request-count limits for an already-settled task.
+func (s *BillingCacheService) CheckPaidVideoRead(ctx context.Context, user *User, group *Group) error {
+	if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple {
+		return nil
+	}
+	return s.checkRPM(ctx, user, group)
+}
+
 // ReserveFixedCharge 为扣费前即可确定金额的费用（倍率后 USD，如显式缓存存储费）做准入并登记在途预留。
 //
 // 余额模式要求缓存余额覆盖 amount 及用户的其他在途预留；订阅模式要求日 / 周 / 月剩余额度覆盖 amount；
