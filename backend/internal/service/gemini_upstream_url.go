@@ -44,6 +44,13 @@ func buildGeminiAIStudioModelActionURL(baseURL, model, action string, stream boo
 	return fullURL, nil
 }
 
+// IsSafeGeminiModelResourceName validates the full catalog path with the same
+// segment and length limits used when forwarding a model lookup.
+func IsSafeGeminiModelResourceName(model string) bool {
+	_, ok := sanitizedUpstreamPathSuffix("/v1beta/models/" + model)
+	return ok
+}
+
 // IsSafeGeminiModelPathSegment 供 handler 层在解析出 URL 里的模型名后立刻校验，
 // 让客户端拿到明确的 400，而不是等到构造上游请求时才报错。
 func IsSafeGeminiModelPathSegment(model string) bool {

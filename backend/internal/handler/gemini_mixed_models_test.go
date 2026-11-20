@@ -197,7 +197,7 @@ func (f *geminiDeclaredModelsFixture) get(model string) *httptest.ResponseRecord
 // 分组内 Gemini 账号都声明了 model_mapping 时，列表与详情都按声明的模型应答，不透传选中账号的上游列表。
 func TestGeminiNativeModelsUsesDeclaredMappings(t *testing.T) {
 	f := newGeminiDeclaredModelsFixture(t, []service.Account{
-		{ID: 1, Platform: service.PlatformGemini, Type: service.AccountTypeAPIKey, Priority: 10, Credentials: map[string]any{"api_key": "a", "model_mapping": map[string]any{"gemini-4-argon": "gemini-4-argon"}}},
+		{ID: 1, Platform: service.PlatformGemini, Type: service.AccountTypeAPIKey, Priority: 10, Credentials: map[string]any{"api_key": "a", "model_mapping": map[string]any{"gemini-4-argon": "gemini-4-argon", "publisher/model-a": "publisher/model-a"}}},
 		{ID: 2, Platform: service.PlatformGemini, Type: service.AccountTypeAPIKey, Priority: 11, Credentials: map[string]any{"api_key": "b", "model_mapping": map[string]any{"gemini-2.5-flash": "gemini-2.5-flash", "gemini-3.1-pro-preview": "gemini-3.1-pro-preview", "gemini-3.8-*": "gemini-3.8-flash"}}},
 		{ID: 3, Platform: service.PlatformAntigravity, Extra: map[string]any{"mixed_scheduling": true}, Credentials: map[string]any{"model_mapping": map[string]any{"gemini-synced-custom": "gemini-3.8-flash-high"}}},
 	})
@@ -212,6 +212,7 @@ func TestGeminiNativeModelsUsesDeclaredMappings(t *testing.T) {
 
 	for model, status := range map[string]int{
 		"gemini-4-argon":                     http.StatusOK,
+		"publisher/model-a":                  http.StatusOK,
 		"gemini-3.8-flash":                   http.StatusOK,
 		"gemini-3.1-pro-preview-customtools": http.StatusOK,
 		"gemini-synced-custom":               http.StatusOK,

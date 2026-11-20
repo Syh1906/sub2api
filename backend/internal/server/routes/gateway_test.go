@@ -58,6 +58,42 @@ func newGatewayRoutesTestRouterWithConfig(cfg *config.Config, platform ...string
 	return router
 }
 
+func TestGatewayRoutesGeminiModelDetailUsesAuthenticatedCatalog(t *testing.T) {
+	router := newGatewayRoutesTestRouter(service.PlatformGemini)
+	for _, name := range []string{"model-b", "publisher/model-a"} {
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/v1beta/models/"+name, nil))
+		require.Equal(t, http.StatusUnauthorized, w.Code, name)
+	}
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/v1beta/models/?pageSize=2", nil))
+	require.Equal(t, http.StatusMovedPermanently, w.Code)
+	require.Equal(t, "/v1beta/models?pageSize=2", w.Header().Get("Location"))
+}
+
+func TestGeminiModelDetailGroupAllowlistUsesCatalogName(t *testing.T) {
+	for _, allowed := range []string{"publisher/model-a", "models/publisher/model-a"} {
+		t.Run(allowed, func(t *testing.T) {
+			router := gin.New()
+			router.Use(geminiModelDetailParam, func(c *gin.Context) {
+				group := &service.Group{ModelAllowlist: service.GroupModelAllowlist{Enabled: true, Models: []string{allowed}}}
+				c.Set(string(servermiddleware.ContextKeyAPIKey), &service.APIKey{Group: group})
+			}, servermiddleware.GroupModelAllowlist())
+			router.GET("/v1beta/models/*modelPath", func(c *gin.Context) {
+				require.Equal(t, "publisher/model-a", c.Param("model"))
+				c.Status(http.StatusOK)
+			})
+
+			for name, status := range map[string]int{"publisher/model-a": http.StatusOK, "another/model-a": http.StatusNotFound} {
+				w := httptest.NewRecorder()
+				router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/v1beta/models/"+name, nil))
+				require.Equal(t, status, w.Code, name)
+			}
+		})
+	}
+}
+
 func TestGatewayRoutesOpenAIResponsesCompactPathIsRegistered(t *testing.T) {
 	router := newGatewayRoutesTestRouter()
 

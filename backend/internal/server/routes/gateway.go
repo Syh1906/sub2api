@@ -340,6 +340,7 @@ func RegisterGatewayRoutes(
 
 	// Gemini 原生 API 兼容层（Gemini SDK/CLI 直连）
 	gemini := r.Group("/v1beta")
+	gemini.Use(geminiModelDetailParam)
 	gemini.Use(bodyLimit)
 	gemini.Use(clientRequestID)
 	gemini.Use(opsErrorLogger)
@@ -350,7 +351,7 @@ func RegisterGatewayRoutes(
 	gemini.Use(requireGroupGoogle)
 	{
 		gemini.GET("/models", h.Gateway.GeminiV1BetaListModels)
-		gemini.GET("/models/:model", h.Gateway.GeminiV1BetaGetModel)
+		gemini.GET("/models/*modelPath", h.Gateway.GeminiV1BetaGetModel)
 		// Gin treats ":" as a param marker, but Gemini uses "{model}:{action}" in the same segment.
 		gemini.POST("/models/*modelAction", h.Gateway.GeminiV1BetaModels)
 		// 显式上下文缓存：网关自管资源 ID 与账号绑定，list/get 只读本地记录。
@@ -654,6 +655,24 @@ func grokCustomVoiceEndpoint(c *gin.Context) string {
 		endpoint += "/audio"
 	}
 	return endpoint
+}
+
+// Gin includes the leading slash in a wildcard. Set the complete model name
+// before group authorization and composite routing inspect the route parameters.
+func geminiModelDetailParam(c *gin.Context) {
+	path := c.Param("modelPath")
+	if path == "" {
+		return
+	}
+	if strings.HasSuffix(path, "/") {
+		target := *c.Request.URL
+		target.Path = strings.TrimSuffix(target.Path, "/")
+		target.RawPath = strings.TrimSuffix(target.RawPath, "/")
+		c.Redirect(http.StatusMovedPermanently, target.RequestURI())
+		c.Abort()
+		return
+	}
+	c.AddParam("model", strings.TrimPrefix(path, "/"))
 }
 
 func compositeGeminiModelFromParams(c *gin.Context) string {

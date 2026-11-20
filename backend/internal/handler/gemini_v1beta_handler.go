@@ -15,6 +15,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/gemini"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/googleapi"
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
@@ -260,7 +261,7 @@ func (h *GatewayHandler) GeminiV1BetaGetModel(c *gin.Context) {
 	}
 	// 模型名会被拼进上游 URL 的 path，先在入口校验片段合规性，
 	// 见 service/upstream_path_guard.go。
-	if !service.IsSafeGeminiModelPathSegment(modelName) {
+	if !service.IsSafeGeminiModelResourceName(modelName) {
 		googleError(c, http.StatusBadRequest, "Invalid model in URL")
 		return
 	}
@@ -309,7 +310,7 @@ func (h *GatewayHandler) GeminiV1BetaGetModel(c *gin.Context) {
 		googleError(c, http.StatusBadGateway, err.Error())
 		return
 	}
-	if shouldFallbackGeminiModel(modelName, res) {
+	if shouldFallbackGeminiModel(account, modelName, res) {
 		c.JSON(http.StatusOK, gemini.FallbackModel(modelName))
 		return
 	}
@@ -1029,14 +1030,16 @@ func shouldFallbackGeminiModels(res *service.UpstreamHTTPResult) bool {
 	return false
 }
 
-func shouldFallbackGeminiModel(modelName string, res *service.UpstreamHTTPResult) bool {
+func shouldFallbackGeminiModel(account *service.Account, modelName string, res *service.UpstreamHTTPResult) bool {
 	if shouldFallbackGeminiModels(res) {
 		return true
 	}
 	if res == nil || res.StatusCode != http.StatusNotFound {
 		return false
 	}
-	return gemini.HasFallbackModel(modelName)
+	// Custom catalogs are authoritative about which models their credentials can see.
+	base := strings.TrimRight(account.GetGeminiBaseURL(geminicli.AIStudioBaseURL), "/")
+	return (account.IsVertexServiceAccount() || base == geminicli.AIStudioBaseURL) && gemini.HasFallbackModel(modelName)
 }
 
 // extractGeminiCLISessionHash 从 Gemini CLI 请求中提取会话标识。

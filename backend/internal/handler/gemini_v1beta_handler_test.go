@@ -196,14 +196,20 @@ func TestShouldFallbackGeminiModel_KnownFallbackOn404(t *testing.T) {
 	t.Parallel()
 
 	res := &service.UpstreamHTTPResult{StatusCode: http.StatusNotFound}
-	require.True(t, shouldFallbackGeminiModel("gemini-3.1-pro-preview-customtools", res))
+	require.True(t, shouldFallbackGeminiModel(&service.Account{Type: service.AccountTypeAPIKey}, "gemini-3.1-pro-preview-customtools", res))
+}
+
+func TestShouldFallbackGeminiModel_CustomCatalog404(t *testing.T) {
+	account := &service.Account{Type: service.AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://catalog.example.test"}}
+	res := &service.UpstreamHTTPResult{StatusCode: http.StatusNotFound}
+	require.False(t, shouldFallbackGeminiModel(account, "gemini-3.1-pro-preview-customtools", res))
 }
 
 func TestShouldFallbackGeminiModel_UnknownModelOn404(t *testing.T) {
 	t.Parallel()
 
 	res := &service.UpstreamHTTPResult{StatusCode: http.StatusNotFound}
-	require.False(t, shouldFallbackGeminiModel("gemini-future-model", res))
+	require.False(t, shouldFallbackGeminiModel(&service.Account{}, "gemini-future-model", res))
 }
 
 func TestShouldFallbackGeminiModel_DelegatesScopeFallback(t *testing.T) {
@@ -214,7 +220,7 @@ func TestShouldFallbackGeminiModel_DelegatesScopeFallback(t *testing.T) {
 		Headers:    http.Header{"Www-Authenticate": []string{"Bearer error=\"insufficient_scope\""}},
 		Body:       []byte("insufficient authentication scopes"),
 	}
-	require.True(t, shouldFallbackGeminiModel("gemini-future-model", res))
+	require.True(t, shouldFallbackGeminiModel(&service.Account{}, "gemini-future-model", res))
 }
 
 func TestGeminiV1BetaGetModel_CompositeAntigravityRoute(t *testing.T) {

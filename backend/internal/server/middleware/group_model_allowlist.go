@@ -126,6 +126,10 @@ func groupModelAllowlistModelsFromBody(c *gin.Context) ([]string, bool) {
 // `model` / `modelAction`（去掉 `:action` 后缀）。提取不到返回空串，
 // 由调用方决定是否继续读请求体或查询参数。
 func groupModelAllowlistModelFromParams(c *gin.Context) string {
+	// Match Gemini detail reads against the same resource name as the catalog.
+	if path := c.Param("modelPath"); path != "" {
+		return "models" + path
+	}
 	if model := strings.TrimSpace(c.Param("model")); model != "" {
 		return model
 	}
