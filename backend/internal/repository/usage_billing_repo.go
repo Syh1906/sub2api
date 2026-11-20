@@ -20,6 +20,19 @@ func NewUsageBillingRepository(_ *dbent.Client, sqlDB *sql.DB) service.UsageBill
 	return &usageBillingRepository{db: sqlDB}
 }
 
+// NewStandardVideoReceiptLookup checks a durable debit independently of usage-log retention.
+// A receipt is not task authorization: every read still requires the current user/key/group binding.
+func NewStandardVideoReceiptLookup(db *sql.DB) service.StandardVideoReceiptLookup {
+	return func(ctx context.Context, keyID int64, id string) (bool, error) {
+		var settled bool
+		err := db.QueryRowContext(ctx, `
+			SELECT EXISTS (SELECT 1 FROM usage_billing_dedup WHERE request_id=$1 AND api_key_id=$2)
+			    OR EXISTS (SELECT 1 FROM usage_billing_dedup_archive WHERE request_id=$1 AND api_key_id=$2)
+		`, service.StandardVideoBillingID(id), keyID).Scan(&settled)
+		return settled, err
+	}
+}
+
 func (r *usageBillingRepository) Apply(ctx context.Context, cmd *service.UsageBillingCommand) (_ *service.UsageBillingApplyResult, err error) {
 	if cmd == nil {
 		return &service.UsageBillingApplyResult{}, nil
@@ -55,12 +68,42 @@ func (r *usageBillingRepository) Apply(ctx context.Context, cmd *service.UsageBi
 	if err := r.applyUsageBillingEffects(ctx, tx, cmd, result); err != nil {
 		return nil, err
 	}
+	if cmd.UsageLog != nil {
+		if err := writeSettledUsageReceipt(ctx, tx, cmd.UsageLog); err != nil {
+			return nil, err
+		}
+	}
 
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 	tx = nil
 	return result, nil
+}
+
+// A prior failed attempt may already have a zero-cost detail for this request.
+func writeSettledUsageReceipt(ctx context.Context, tx *sql.Tx, log *service.UsageLog) error {
+	prepared := prepareUsageLogInsert(log)
+	res, err := tx.ExecContext(ctx, insertUsageLogValuesSQL+`
+		ON CONFLICT (request_id, api_key_id) DO UPDATE
+		SET actual_cost=EXCLUDED.actual_cost, output_cost=EXCLUDED.output_cost,
+		    total_cost=EXCLUDED.total_cost, rate_multiplier=EXCLUDED.rate_multiplier,
+		    billing_type=EXCLUDED.billing_type, subscription_id=EXCLUDED.subscription_id
+		WHERE usage_logs.user_id=EXCLUDED.user_id AND usage_logs.account_id=EXCLUDED.account_id
+		  AND usage_logs.group_id IS NOT DISTINCT FROM EXCLUDED.group_id
+		  AND usage_logs.model=EXCLUDED.model AND usage_logs.output_tokens=EXCLUDED.output_tokens
+	`, prepared.args...)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n != 1 {
+		return service.ErrUsageBillingRequestConflict
+	}
+	return nil
 }
 
 func (r *usageBillingRepository) claimUsageBillingKey(ctx context.Context, tx *sql.Tx, cmd *service.UsageBillingCommand) (bool, error) {

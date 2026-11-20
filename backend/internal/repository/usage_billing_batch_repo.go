@@ -90,6 +90,13 @@ func (r *usageBillingRepository) ApplyBatch(ctx context.Context, cmds []*service
 		return nil, err
 	}
 
+	for i, cmd := range cmds {
+		if applied[i] && cmd.UsageLog != nil {
+			if err := writeSettledUsageReceipt(ctx, tx, cmd.UsageLog); err != nil {
+				return nil, err
+			}
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}

@@ -21,6 +21,8 @@ import (
 
 // OpenAIRecordUsageInput input for recording usage
 type OpenAIRecordUsageInput struct {
+	// Standard video results must have a durable receipt before delivery.
+	atomicReceipt      bool
 	Result             *OpenAIForwardResult
 	APIKey             *APIKey
 	User               *User
@@ -512,7 +514,12 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		quotaPlatform = PlatformFromAPIKey(apiKey)
 	}
 
+	var atomicLog *UsageLog
+	if input.atomicReceipt {
+		atomicLog = usageLog
+	}
 	_, billingErr := applyUsageBilling(ctx, requestID, usageLog, &postUsageBillingParams{
+		atomicUsageLog:             atomicLog,
 		Cost:                       cost,
 		User:                       user,
 		APIKey:                     apiKey,
@@ -526,6 +533,9 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		SimpleModeKeyRateLimitOnly: simpleModeKeyRateLimitOnly,
 	}, s.billingDeps(), s.usageBillingRepo)
 
+	if input.atomicReceipt {
+		return billingErr
+	}
 	if billingErr != nil {
 		usageLog.ActualCost = 0
 		writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.openai_gateway")

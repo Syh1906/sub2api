@@ -130,6 +130,11 @@ type StandardVideoTask struct {
 	CreatedAt     time.Time
 }
 
+// StandardVideoReceiptLookup checks for the committed charge for this key and task.
+type StandardVideoReceiptLookup func(ctx context.Context, keyID int64, taskID string) (bool, error)
+
+func StandardVideoBillingID(id string) string { return "standard-video:" + id }
+
 func standardVideoKey(key *APIKey, id string) string {
 	return fmt.Sprintf("standard-video:%d:%d:%d:%s", derefGroupID(key.GroupID), key.UserID, key.ID, id)
 }
@@ -218,19 +223,12 @@ func (s *OpenAIGatewayService) settleStandardVideo(ctx context.Context, id strin
 	if json.Unmarshal(data, &response) != nil || response.Usage == nil || response.Usage.CompletionTokens == nil || *response.Usage.CompletionTokens < 0 {
 		return errors.New("completed video lacks valid output token usage")
 	}
-	receiptKey := standardVideoKey(usage.APIKey, id) + ":paid"
-	paid, err := s.cache.GetGrokVideoPendingBilling(ctx, receiptKey)
-	if err != nil {
-		return err
-	}
-	if len(paid) > 0 {
-		return nil
-	}
+	usage.atomicReceipt = true
 	usage.Result = &OpenAIForwardResult{
 		Model:         t.Model,
 		UpstreamModel: t.UpstreamModel,
 		BillingModel:  t.BillingModel,
-		RequestID:     "standard-video:" + id,
+		RequestID:     StandardVideoBillingID(id),
 		Usage:         OpenAIUsage{OutputTokens: *response.Usage.CompletionTokens},
 		Duration:      time.Since(t.CreatedAt),
 		NativePricing: &ResolvedPricing{Mode: BillingModeToken, BasePricing: &ModelPricing{OutputPricePerToken: t.OutputPrice}},
@@ -238,11 +236,7 @@ func (s *OpenAIGatewayService) settleStandardVideo(ctx context.Context, id strin
 	usage.OriginalModel = t.Model
 	usage.RequestPayloadHash = HashUsageRequestPayload([]byte(id))
 	usage.PricingAt = t.CreatedAt
-	if err = s.RecordUsage(ctx, &usage); err != nil {
-		return fmt.Errorf("settle video usage: %w", err)
-	}
-	// Concurrent first reads and retries after a lost receipt use the same database billing key.
-	return s.cache.SetGrokVideoPendingBilling(ctx, receiptKey, []byte("1"), standardVideoRetention)
+	return s.RecordUsage(ctx, &usage)
 }
 
 func (s *OpenAIGatewayService) finishStandardVideo(ctx context.Context, c *gin.Context, endpoint GrokMediaEndpoint, target, status string, account *Account, key *APIKey, id string) error {
@@ -280,7 +274,7 @@ func (s *OpenAIGatewayService) finishStandardVideo(ctx context.Context, c *gin.C
 	return nil
 }
 
-func (s *OpenAIGatewayService) ForwardStandardVideo(ctx context.Context, c *gin.Context, endpoint GrokMediaEndpoint, id string, task *StandardVideoTask, body []byte, mapping ChannelMappingResult, usage OpenAIRecordUsageInput) error {
+func (s *OpenAIGatewayService) ForwardStandardVideo(ctx context.Context, c *gin.Context, endpoint GrokMediaEndpoint, id string, task *StandardVideoTask, body []byte, mapping ChannelMappingResult, usage OpenAIRecordUsageInput, alreadySettled bool) error {
 	key, account := usage.APIKey, usage.Account
 	if !account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityStandardVideos) {
 		return errors.New("account does not provide standard video tasks")
@@ -346,8 +340,10 @@ func (s *OpenAIGatewayService) ForwardStandardVideo(ctx context.Context, c *gin.
 	}
 	switch status {
 	case "completed":
-		if err = s.settleStandardVideo(ctx, id, task, data, usage); err != nil {
-			return err
+		if !alreadySettled {
+			if err = s.settleStandardVideo(ctx, id, task, data, usage); err != nil {
+				return err
+			}
 		}
 	case "queued", "in_progress", "failed", "cancelled", "canceled", "expired":
 	default:
