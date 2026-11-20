@@ -299,6 +299,30 @@ func TestGeminiCachedContentUpstreamErrorClassification(t *testing.T) {
 	require.False(t, badRequest.NotFound())
 }
 
+func TestGeminiCachedContentRenewalOutcomeUnknown(t *testing.T) {
+	const body = `{"error":{"status":"UNKNOWN","details":[{"@type":"type.googleapis.com/google.rpc.Help"},{"@type":"type.googleapis.com/google.rpc.ErrorInfo","domain":"axonhub","reason":"GEMINI_CACHE_RENEWAL_OUTCOME_UNKNOWN"}]}}`
+	for _, tc := range []struct {
+		name    string
+		gateway bool
+		status  int
+		body    string
+		want    bool
+	}{
+		{"gateway marker", true, 502, body, true},
+		{"direct supplier", false, 502, body, false},
+		{"other HTTP status", true, 503, body, false},
+		{"other error status", true, 502, strings.Replace(body, `"UNKNOWN"`, `"UNAVAILABLE"`, 1), false},
+		{"other detail type", true, 502, strings.Replace(body, "rpc.ErrorInfo", "rpc.DebugInfo", 1), false},
+		{"other domain", true, 502, strings.Replace(body, "axonhub", "example", 1), false},
+		{"other reason", true, 502, strings.Replace(body, "OUTCOME_UNKNOWN", "REJECTED", 1), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := &GeminiCachedContentUpstreamError{UpstreamGateway: tc.gateway, StatusCode: tc.status, Body: []byte(tc.body)}
+			require.Equal(t, tc.want, err.RenewalOutcomeUnknown())
+		})
+	}
+}
+
 func TestGeminiCachedContentResolve(t *testing.T) {
 	repo := newGeminiCachedContentRepoStub()
 	now := time.Date(2026, 10, 9, 8, 0, 0, 0, time.UTC)

@@ -615,6 +615,56 @@ func TestGeminiCachedContentsPatch_MutationKeptOnlyWhenUpstreamOutcomeUnknown(t 
 	})
 }
 
+// A gateway can return this response after the supplier has already applied the requested TTL.
+func TestGeminiCachedContentsPatch_UnconfirmedGatewayRenewal(t *testing.T) {
+	const unknown = `{"error":{"code":502,"status":"UNKNOWN","details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","domain":"axonhub","reason":"GEMINI_CACHE_RENEWAL_OUTCOME_UNKNOWN"}]}}`
+	for _, tc := range []struct {
+		name    string
+		expired bool
+	}{{"restore original expiry", false}, {"delete expired cache", true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := newCachedBillingEnv(t, 1000, 900, 901)
+			env.accounts[900].Credentials["base_url"] = "https://gw.example.com"
+			env.accounts[900].Credentials[service.GeminiExplicitCacheUpstreamCredentialKey] = true
+			baseline := time.Now().Add(time.Hour)
+			env.seed(baseline)
+			env.upstream.failures = map[string]cachedBillingUpstreamFailure{
+				http.MethodPatch: {status: http.StatusBadGateway, body: unknown},
+			}
+
+			rec := env.patch()
+			require.Equal(t, http.StatusBadGateway, rec.Code)
+			require.JSONEq(t, unknown, rec.Body.String())
+			require.True(t, env.repo.pendingMutation(100))
+			require.True(t, env.repo.records["abc"].ExpireTime.Equal(baseline))
+			require.Equal(t, http.StatusConflict, env.patch().Code)
+			require.Equal(t, []string{"86400s"}, env.upstream.patchTTLs)
+
+			delete(env.upstream.failures, http.MethodPatch)
+			env.repo.expireLease(100)
+			if tc.expired {
+				env.repo.records["abc"].ExpireTime = time.Now().Add(-time.Second)
+			}
+			recovered, err := env.h.geminiCachedContentService.RecoverStaleMutations(context.Background())
+			require.NoError(t, err)
+			require.Equal(t, 1, recovered)
+			if tc.expired {
+				require.Equal(t, []int64{100}, env.repo.deleted)
+				require.Equal(t, []string{"PATCH /v1beta/cachedContents/up1", "DELETE /v1beta/cachedContents/up1"}, env.upstream.calls)
+			} else {
+				require.False(t, env.repo.pendingMutation(100))
+				require.Equal(t, []string{"PATCH /v1beta/cachedContents/up1", "PATCH /v1beta/cachedContents/up1"}, env.upstream.calls)
+				requireTTLNear(t, env.upstream.patchTTLs[1], time.Until(baseline))
+			}
+			recovered, err = env.h.geminiCachedContentService.RecoverStaleMutations(context.Background())
+			require.NoError(t, err)
+			require.Zero(t, recovered)
+			require.Len(t, env.upstream.calls, 2)
+			require.Empty(t, env.usage.totals())
+		})
+	}
+}
+
 // 修改前的到期时间已过：恢复时删除上游缓存与本地记录。
 func TestGeminiCachedContentMutationRecovery_DeletesUpstreamWhenBaselineExpired(t *testing.T) {
 	env := newCachedBillingEnv(t, 1000, 900)

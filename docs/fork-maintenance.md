@@ -25,6 +25,12 @@
 
 ## 自有功能与修复
 
+### Gemini 显式缓存续期结果未确认时的恢复
+
+支持显式缓存的上游网关可能已经向供应商延长有效期，但无法确认结果。对 AxonHub 返回的 HTTP 502，sub2api 在 `error.status` 为 `UNKNOWN`、`google.rpc.ErrorInfo` 中的 `domain` 为 `axonhub` 且 `reason` 为 `GEMINI_CACHE_RENEWAL_OUTCOME_UNKNOWN` 时，保留原到期时间和恢复记录，并将网关响应返回客户端。
+
+恢复记录仍有效时，同一缓存再次续期返回 409。后台接管后通过原账号操作原资源：原有效期仍有剩余时恢复到原期限，已到期时删除缓存。未确认的延期和这次恢复都不新增延期费用。连接中断继续使用原有恢复流程，上游明确拒绝时释放恢复记录。此项无需数据库迁移。[回归用例](../backend/internal/handler/gemini_cached_contents_billing_test.go) · [Issue #1](https://github.com/Syh1906/sub2api/issues/1)
+
 ### Gemini 显式缓存创建费用结算（v0.2.22-fork.11）
 
 创建显式缓存时，上游返回实际 token 数之后，服务会结算本次输入费和所选有效期的存储费。旧版本在从预估金额切换到实际金额时过早释放数据库中的在途使用记录，可能出现创建成功、费用流水实扣为零。修复后，金额预留按实际报价替换，在途记录保留至计费任务完成。若余额不足以保存缓存，既有清理流程仍只结算已发生的输入费。回归覆盖正常创建和余额不足两种情况，无需数据库迁移。[创建计费回归](../backend/internal/handler/gemini_cached_contents_billing_test.go)

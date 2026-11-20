@@ -478,8 +478,8 @@ func (h *GatewayHandler) GeminiCachedContentsPatch(c *gin.Context) {
 	upstream, err := svc.PatchUpstream(c.Request.Context(), account, record, ttl)
 	if err != nil {
 		var upErr *service.GeminiCachedContentUpstreamError
-		upstreamRejected := errors.As(err, &upErr)
-		if upstreamRejected || errors.Is(err, service.ErrGeminiCachedContentRequestNotSent) {
+		hasResponse := errors.As(err, &upErr)
+		if (hasResponse && !upErr.RenewalOutcomeUnknown()) || errors.Is(err, service.ErrGeminiCachedContentRequestNotSent) {
 			// 上游有效期未变：清除修改意图。
 			persistCtx, cancelPersist := geminiCachedContentPersistContext(c)
 			if releaseErr := svc.ReleaseMutation(persistCtx, mutation); releaseErr != nil {
@@ -487,7 +487,7 @@ func (h *GatewayHandler) GeminiCachedContentsPatch(c *gin.Context) {
 			}
 			cancelPersist()
 		}
-		if upstreamRejected {
+		if hasResponse {
 			if upErr.NotFound() {
 				if forgetErr := svc.Forget(c.Request.Context(), record); forgetErr != nil {
 					reqLog.Warn("gemini.cached_content.forget_failed", zap.Error(forgetErr))

@@ -23,6 +23,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/googleapi"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -604,6 +605,26 @@ func (e *GeminiCachedContentUpstreamError) Error() string {
 // NotFound 判断上游是否报告缓存不存在（含已过期、已删除）。
 func (e *GeminiCachedContentUpstreamError) NotFound() bool {
 	return e != nil && isGeminiCachedContentNotFound(e.StatusCode, e.Body)
+}
+
+// RenewalOutcomeUnknown reports a gateway response that does not confirm whether
+// the supplier applied the PATCH. Its original expiration must remain recoverable.
+func (e *GeminiCachedContentUpstreamError) RenewalOutcomeUnknown() bool {
+	if !e.UpstreamGateway || e.StatusCode != http.StatusBadGateway {
+		return false
+	}
+	var response googleapi.ErrorResponse
+	if err := json.Unmarshal(e.Body, &response); err != nil || response.Error.Status != "UNKNOWN" {
+		return false
+	}
+	for _, detail := range response.Error.Details {
+		var info googleapi.ErrorDetailInfo
+		if json.Unmarshal(detail, &info) == nil && info.Type == "type.googleapis.com/google.rpc.ErrorInfo" &&
+			info.Domain == "axonhub" && info.Reason == "GEMINI_CACHE_RENEWAL_OUTCOME_UNKNOWN" {
+			return true
+		}
+	}
+	return false
 }
 
 // GeminiCachedContentMalformedResponseError 表示上游返回 2xx 但响应体不可用；Name 非空时上游资源已经创建。
