@@ -32,7 +32,18 @@ func (s *PaymentService) GetWebhookProvider(ctx context.Context, providerKey, ou
 func (s *PaymentService) GetWebhookProviders(ctx context.Context, providerKey, outTradeNo string) ([]payment.Provider, error) {
 	if outTradeNo != "" {
 		order, err := s.entClient.PaymentOrder.Query().Where(paymentorder.OutTradeNo(outTradeNo)).Only(ctx)
+		if providerKey == payment.TypeStripe {
+			if legacyID, ok := parseLegacyPaymentOrderID(outTradeNo, err); ok {
+				order, err = s.entClient.PaymentOrder.Get(ctx, legacyID)
+			}
+			if err != nil && !dbent.IsNotFound(err) {
+				return nil, err
+			}
+		}
 		if err == nil {
+			if providerKey == payment.TypeStripe && payment.GetBasePaymentType(expectedNotificationProviderKeyForOrder(nil, order, "")) != payment.TypeStripe {
+				return nil, payment.ErrProviderNotFound
+			}
 			if psHasPinnedProviderInstance(order) {
 				prov, err := s.getPinnedOrderProvider(ctx, order)
 				if err != nil {
@@ -71,6 +82,10 @@ func (s *PaymentService) GetWebhookProviders(ctx context.Context, providerKey, o
 	}
 
 	if !s.webhookRegistryFallbackAllowed(ctx, providerKey) {
+		if providerKey == payment.TypeStripe {
+			// 没有关联本站订单的事件，验签后按事件类型或未知订单处理。
+			return s.getEnabledWebhookProvidersByKey(ctx, providerKey)
+		}
 		return nil, fmt.Errorf("webhook provider fallback is ambiguous for %s", providerKey)
 	}
 

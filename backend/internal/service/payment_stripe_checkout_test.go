@@ -112,6 +112,14 @@ func TestStripeCheckoutKeepsOrderMerchant(t *testing.T) {
 		unbound, err := fresh.ResumeCheckout(ctx, created.OrderID, user.ID)
 		require.NoError(t, err)
 		require.Empty(t, unbound.StripePublishableKey)
+		// 新订单加密会话中的原公钥不能替代商户绑定。
+		sealed, err := svc.sealCheckout(created)
+		require.NoError(t, err)
+		db.PaymentOrder.UpdateOneID(created.OrderID).SetCheckoutCiphertext(sealed).SaveX(ctx)
+		unbound, err = fresh.ResumeCheckout(ctx, created.OrderID, user.ID)
+		require.NoError(t, err)
+		require.Empty(t, unbound.ClientSecret)
+		require.Empty(t, unbound.StripePublishableKey)
 	}
 	require.Equal(t, map[string]bool{"A": true, "B": true}, seen)
 	require.Equal(t, int32(2), calls.Load())

@@ -173,6 +173,12 @@ func TestExtractOutTradeNo(t *testing.T) {
 			want:        "",
 		},
 		{
+			name:        "stripe order metadata",
+			providerKey: payment.TypeStripe,
+			rawBody:     `{"data":{"object":{"metadata":{"orderId":"sub2_original"}}}}`,
+			want:        "sub2_original",
+		},
+		{
 			name:        "airwallex payment intent payload",
 			providerKey: payment.TypeAirwallex,
 			rawBody:     `{"name":"payment_intent.succeeded","data":{"object":{"merchant_order_id":"sub2_awx_123"}}}`,

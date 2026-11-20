@@ -139,14 +139,19 @@ func (s *PaymentService) checkoutForOrder(ctx context.Context, order *dbent.Paym
 // 旧版收银会话没有公钥；只查询原单记录的实例，不按当前启用顺序重新选商户。
 // 未保存客户端参数时也可向原设备返回公钥，与该设备持有的原付款意图配对。
 func (s *PaymentService) withOrderStripeKey(ctx context.Context, order *dbent.PaymentOrder, result *CreateOrderResponse) (*CreateOrderResponse, error) {
-	if result.StripePublishableKey != "" || order.PaymentTradeNo == "" || expectedNotificationProviderKeyForOrder(nil, order, "") != payment.TypeStripe {
+	if payment.GetBasePaymentType(expectedNotificationProviderKeyForOrder(nil, order, "")) != payment.TypeStripe && result.StripePublishableKey == "" {
 		return result, nil
 	}
 	instance, err := s.getPinnedOrderProviderInstance(ctx, order)
 	if err != nil {
 		return nil, err
 	}
-	if instance != nil && instance.ProviderKey == payment.TypeStripe {
+	if instance == nil || instance.ProviderKey != payment.TypeStripe || order.PaymentTradeNo == "" {
+		result.ClientSecret = ""
+		result.StripePublishableKey = ""
+		return result, nil
+	}
+	if result.StripePublishableKey == "" {
 		cfg, err := s.configService.decryptConfig(instance.Config)
 		if err != nil {
 			return nil, err

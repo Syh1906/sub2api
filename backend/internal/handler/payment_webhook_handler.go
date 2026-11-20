@@ -90,6 +90,10 @@ func (h *PaymentWebhookHandler) handleNotify(c *gin.Context, providerKey string)
 	providers, err := h.paymentService.GetWebhookProviders(c.Request.Context(), providerKey, outTradeNo)
 	if err != nil {
 		slog.Warn("[Payment Webhook] provider not found", "provider", providerKey, "outTradeNo", outTradeNo, "error", err)
+		if providerKey == payment.TypeStripe {
+			c.String(http.StatusServiceUnavailable, "payment provider unavailable")
+			return
+		}
 		if providerKey == payment.TypeWxpay {
 			c.String(http.StatusBadRequest, "verify failed")
 			return
@@ -103,6 +107,14 @@ func (h *PaymentWebhookHandler) handleNotify(c *gin.Context, providerKey string)
 		headers[strings.ToLower(k)] = c.GetHeader(k)
 	}
 
+	if providerKey == payment.TypeStripe {
+		for _, p := range providers {
+			if p.ProviderKey() != payment.TypeStripe {
+				c.String(http.StatusBadRequest, "provider mismatch")
+				return
+			}
+		}
+	}
 	verifiedProvider, notification, err := verifyNotificationWithProviders(c.Request.Context(), providers, rawBody, headers)
 	if err != nil {
 		truncatedBody := rawBody
@@ -118,7 +130,7 @@ func (h *PaymentWebhookHandler) handleNotify(c *gin.Context, providerKey string)
 	resolvedProviderKey := verifiedProvider.ProviderKey()
 
 	// nil notification means irrelevant event (e.g. Stripe non-payment event); return success.
-	if notification == nil {
+	if notification == nil || (resolvedProviderKey == payment.TypeStripe && notification.OrderID == "") {
 		writeSuccessResponse(c, resolvedProviderKey)
 		return
 	}
@@ -161,6 +173,18 @@ func extractOutTradeNo(rawBody, providerKey string) string {
 		if err == nil {
 			return values.Get("out_trade_no")
 		}
+	case payment.TypeStripe:
+		// 仅用于选择验签商户，仍以该商户对原始通知的签名验证为准。
+		var event struct {
+			Data struct {
+				Object struct {
+					Metadata map[string]string `json:"metadata"`
+				} `json:"object"`
+			} `json:"data"`
+		}
+		if json.Unmarshal([]byte(rawBody), &event) == nil {
+			return event.Data.Object.Metadata["orderId"]
+		}
 	case payment.TypeAirwallex:
 		var payload struct {
 			Data struct {
@@ -173,8 +197,6 @@ func extractOutTradeNo(rawBody, providerKey string) string {
 			return strings.TrimSpace(payload.Data.Object.MerchantOrderID)
 		}
 	}
-	// For other providers (Stripe, Alipay direct, WxPay direct), the registry
-	// typically has only one instance, so no instance lookup is needed.
 	return ""
 }
 
