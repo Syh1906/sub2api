@@ -2,6 +2,8 @@ package handler
 
 import (
 	"fmt"
+	"io"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -141,6 +143,7 @@ func (h *PaymentHandler) GetCheckoutInfo(c *gin.Context) {
 	}
 
 	response.Success(c, checkoutInfoResponse{
+		PurchaseRecovery:              true,
 		Methods:                       limitsResp.Methods,
 		GlobalMin:                     limitsResp.GlobalMin,
 		GlobalMax:                     limitsResp.GlobalMax,
@@ -161,6 +164,7 @@ func (h *PaymentHandler) GetCheckoutInfo(c *gin.Context) {
 }
 
 type checkoutInfoResponse struct {
+	PurchaseRecovery              bool                            `json:"purchase_recovery"`
 	Methods                       map[string]service.MethodLimits `json:"methods"`
 	GlobalMin                     float64                         `json:"global_min"`
 	GlobalMax                     float64                         `json:"global_max"`
@@ -278,6 +282,7 @@ func (h *PaymentHandler) CreateOrder(c *gin.Context) {
 		mobile = *req.IsMobile
 	}
 	result, err := h.paymentService.CreateOrder(c.Request.Context(), service.CreateOrderRequest{
+		PurchaseKey:     c.GetHeader("Idempotency-Key"),
 		UserID:          subject.UserID,
 		Amount:          req.Amount,
 		PaymentType:     req.PaymentType,
@@ -297,6 +302,7 @@ func (h *PaymentHandler) CreateOrder(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
+	c.Header("Cache-Control", "no-store")
 	response.Success(c, result)
 }
 
@@ -380,7 +386,49 @@ func (h *PaymentHandler) GetOrder(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	response.Success(c, sanitizePaymentOrderForResponse(order))
+	result := sanitizePaymentOrderForResponse(order)
+	result.Voucher, err = h.paymentService.TextDetail(c.Request.Context(), order, true)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	response.Success(c, result)
+}
+
+func (h *PaymentHandler) ResumeCheckout(c *gin.Context) {
+	subject, ok := requireAuth(c)
+	if !ok {
+		return
+	}
+
+	orderID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid order ID")
+		return
+	}
+
+	order, err := h.paymentService.ResumeCheckout(c.Request.Context(), orderID, subject.UserID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	response.Success(c, order)
+}
+
+func (h *PaymentHandler) LookupPurchase(c *gin.Context) {
+	subject, ok := requireAuth(c)
+	if !ok {
+		return
+	}
+	result, err := h.paymentService.LookupPurchase(c.Request.Context(), subject.UserID, c.GetHeader("Idempotency-Key"))
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	response.Success(c, result)
 }
 
 // CancelOrder cancels a pending order for the authenticated user.
@@ -628,28 +676,30 @@ func isMobile(c *gin.Context) bool {
 }
 
 type PaymentOrderResult struct {
-	ID                  int64      `json:"id"`
-	UserID              int64      `json:"user_id"`
-	Amount              float64    `json:"amount"`
-	PayAmount           float64    `json:"pay_amount"`
-	FeeRate             float64    `json:"fee_rate"`
-	BonusAmount         float64    `json:"bonus_amount"`
-	Currency            string     `json:"currency"`
-	PaymentType         string     `json:"payment_type"`
-	OutTradeNo          string     `json:"out_trade_no"`
-	Status              string     `json:"status"`
-	OrderType           string     `json:"order_type"`
-	CreatedAt           time.Time  `json:"created_at"`
-	ExpiresAt           time.Time  `json:"expires_at"`
-	PaidAt              *time.Time `json:"paid_at,omitempty"`
-	CompletedAt         *time.Time `json:"completed_at,omitempty"`
-	RefundAmount        float64    `json:"refund_amount"`
-	RefundReason        *string    `json:"refund_reason,omitempty"`
-	RefundRequestedAt   *time.Time `json:"refund_requested_at,omitempty"`
-	RefundRequestedBy   *string    `json:"refund_requested_by,omitempty"`
-	RefundRequestReason *string    `json:"refund_request_reason,omitempty"`
-	PlanID              *int64     `json:"plan_id,omitempty"`
-	ProviderInstanceID  *string    `json:"provider_instance_id,omitempty"`
+	Voucher             *service.TextVoucherDetail `json:"voucher,omitempty"`
+	CheckoutRecovery    bool                       `json:"checkout_recovery"`
+	ID                  int64                      `json:"id"`
+	UserID              int64                      `json:"user_id"`
+	Amount              float64                    `json:"amount"`
+	PayAmount           float64                    `json:"pay_amount"`
+	FeeRate             float64                    `json:"fee_rate"`
+	BonusAmount         float64                    `json:"bonus_amount"`
+	Currency            string                     `json:"currency"`
+	PaymentType         string                     `json:"payment_type"`
+	OutTradeNo          string                     `json:"out_trade_no"`
+	Status              string                     `json:"status"`
+	OrderType           string                     `json:"order_type"`
+	CreatedAt           time.Time                  `json:"created_at"`
+	ExpiresAt           time.Time                  `json:"expires_at"`
+	PaidAt              *time.Time                 `json:"paid_at,omitempty"`
+	CompletedAt         *time.Time                 `json:"completed_at,omitempty"`
+	RefundAmount        float64                    `json:"refund_amount"`
+	RefundReason        *string                    `json:"refund_reason,omitempty"`
+	RefundRequestedAt   *time.Time                 `json:"refund_requested_at,omitempty"`
+	RefundRequestedBy   *string                    `json:"refund_requested_by,omitempty"`
+	RefundRequestReason *string                    `json:"refund_request_reason,omitempty"`
+	PlanID              *int64                     `json:"plan_id,omitempty"`
+	ProviderInstanceID  *string                    `json:"provider_instance_id,omitempty"`
 }
 
 func sanitizePaymentOrdersForResponse(orders []*dbent.PaymentOrder) []PaymentOrderResult {
@@ -667,6 +717,7 @@ func sanitizePaymentOrderForResponse(order *dbent.PaymentOrder) *PaymentOrderRes
 		return nil
 	}
 	return &PaymentOrderResult{
+		CheckoutRecovery:    true,
 		ID:                  order.ID,
 		UserID:              order.UserID,
 		Amount:              order.Amount,
@@ -694,4 +745,30 @@ func sanitizePaymentOrderForResponse(order *dbent.PaymentOrder) *PaymentOrderRes
 
 func isWeChatBrowser(c *gin.Context) bool {
 	return strings.Contains(strings.ToLower(c.GetHeader("User-Agent")), "micromessenger")
+}
+
+func (h *PaymentHandler) TextOffers(c *gin.Context) {
+	if _, ok := requireAuth(c); !ok {
+		return
+	}
+	offers, err := h.paymentService.TextOffers(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"currency": "USD", "offers": offers})
+}
+
+func (h *PaymentHandler) CreemWebhook(c *gin.Context) {
+	const limit = 1 << 20
+	body, err := io.ReadAll(http.MaxBytesReader(c.Writer, c.Request.Body, limit))
+	if err != nil {
+		c.Status(http.StatusRequestEntityTooLarge)
+		return
+	}
+	if err = h.paymentService.HandleCreemEvent(c.Request.Context(), body, c.GetHeader("creem-signature")); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	c.Status(http.StatusOK)
 }

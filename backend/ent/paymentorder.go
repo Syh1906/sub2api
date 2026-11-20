@@ -37,6 +37,12 @@ type PaymentOrder struct {
 	BonusAmount float64 `json:"bonus_amount,omitempty"`
 	// RechargeCode holds the value of the "recharge_code" field.
 	RechargeCode string `json:"recharge_code,omitempty"`
+	// PurchaseKeyHash holds the value of the "purchase_key_hash" field.
+	PurchaseKeyHash *string `json:"-"`
+	// PurchaseRequestHash holds the value of the "purchase_request_hash" field.
+	PurchaseRequestHash *string `json:"-"`
+	// CheckoutCiphertext holds the value of the "checkout_ciphertext" field.
+	CheckoutCiphertext *string `json:"-"`
 	// OutTradeNo holds the value of the "out_trade_no" field.
 	OutTradeNo string `json:"out_trade_no,omitempty"`
 	// PaymentType holds the value of the "payment_type" field.
@@ -138,7 +144,7 @@ func (*PaymentOrder) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullFloat64)
 		case paymentorder.FieldID, paymentorder.FieldUserID, paymentorder.FieldPlanID, paymentorder.FieldSubscriptionGroupID, paymentorder.FieldSubscriptionDays:
 			values[i] = new(sql.NullInt64)
-		case paymentorder.FieldUserEmail, paymentorder.FieldUserName, paymentorder.FieldUserNotes, paymentorder.FieldRechargeCode, paymentorder.FieldOutTradeNo, paymentorder.FieldPaymentType, paymentorder.FieldPaymentTradeNo, paymentorder.FieldPayURL, paymentorder.FieldQrCode, paymentorder.FieldQrCodeImg, paymentorder.FieldOrderType, paymentorder.FieldProviderInstanceID, paymentorder.FieldProviderKey, paymentorder.FieldStatus, paymentorder.FieldRefundReason, paymentorder.FieldRefundRequestReason, paymentorder.FieldRefundRequestedBy, paymentorder.FieldFailedReason, paymentorder.FieldClientIP, paymentorder.FieldSrcHost, paymentorder.FieldSrcURL:
+		case paymentorder.FieldUserEmail, paymentorder.FieldUserName, paymentorder.FieldUserNotes, paymentorder.FieldRechargeCode, paymentorder.FieldPurchaseKeyHash, paymentorder.FieldPurchaseRequestHash, paymentorder.FieldCheckoutCiphertext, paymentorder.FieldOutTradeNo, paymentorder.FieldPaymentType, paymentorder.FieldPaymentTradeNo, paymentorder.FieldPayURL, paymentorder.FieldQrCode, paymentorder.FieldQrCodeImg, paymentorder.FieldOrderType, paymentorder.FieldProviderInstanceID, paymentorder.FieldProviderKey, paymentorder.FieldStatus, paymentorder.FieldRefundReason, paymentorder.FieldRefundRequestReason, paymentorder.FieldRefundRequestedBy, paymentorder.FieldFailedReason, paymentorder.FieldClientIP, paymentorder.FieldSrcHost, paymentorder.FieldSrcURL:
 			values[i] = new(sql.NullString)
 		case paymentorder.FieldRefundAt, paymentorder.FieldRefundRequestedAt, paymentorder.FieldExpiresAt, paymentorder.FieldPaidAt, paymentorder.FieldCompletedAt, paymentorder.FieldFailedAt, paymentorder.FieldCreatedAt, paymentorder.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -217,6 +223,27 @@ func (_m *PaymentOrder) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field recharge_code", values[i])
 			} else if value.Valid {
 				_m.RechargeCode = value.String
+			}
+		case paymentorder.FieldPurchaseKeyHash:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field purchase_key_hash", values[i])
+			} else if value.Valid {
+				_m.PurchaseKeyHash = new(string)
+				*_m.PurchaseKeyHash = value.String
+			}
+		case paymentorder.FieldPurchaseRequestHash:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field purchase_request_hash", values[i])
+			} else if value.Valid {
+				_m.PurchaseRequestHash = new(string)
+				*_m.PurchaseRequestHash = value.String
+			}
+		case paymentorder.FieldCheckoutCiphertext:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field checkout_ciphertext", values[i])
+			} else if value.Valid {
+				_m.CheckoutCiphertext = new(string)
+				*_m.CheckoutCiphertext = value.String
 			}
 		case paymentorder.FieldOutTradeNo:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -493,6 +520,12 @@ func (_m *PaymentOrder) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("recharge_code=")
 	builder.WriteString(_m.RechargeCode)
+	builder.WriteString(", ")
+	builder.WriteString("purchase_key_hash=<sensitive>")
+	builder.WriteString(", ")
+	builder.WriteString("purchase_request_hash=<sensitive>")
+	builder.WriteString(", ")
+	builder.WriteString("checkout_ciphertext=<sensitive>")
 	builder.WriteString(", ")
 	builder.WriteString("out_trade_no=")
 	builder.WriteString(_m.OutTradeNo)

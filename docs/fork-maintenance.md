@@ -19,6 +19,20 @@
 
 ## 自有功能与修复
 
+### 单次购买、兑换交付与原单退款（v0.2.22-fork.5）
+
+支持通过 Creem 托管结账购买文字积分兑换码。后端环境使用 `CREEM_MODE`（`test` 或 `prod`）、`CREEM_API_KEY`、`CREEM_WEBHOOK_SECRET`，按金额分别配置 `CREEM_PRODUCT_10`、`CREEM_PRODUCT_20`、`CREEM_PRODUCT_50`、`CREEM_PRODUCT_100`。商品须为对应面额的美元一次性商品。支付总开关启用且该档配置齐全时，登录客户可通过 `GET /api/v1/payment/text-offers` 查看可售档位。创建走原支付订单接口，类型为 `text_voucher`，方式为 `creem`。商户通知入口为 `POST /api/v1/payment/webhook/creem`，需订阅 `checkout.completed` 和 `refund.created`。
+
+付款通知经签名、订单关联及金额核对后，同一笔购买签发一个归购买者所有的兑换码。客户从本人订单详情取码，使用原有兑换入口后才入账。迁移 255 记录每笔购买的已兑换和已用积分。账户余额下降时先消耗普通余额，接着按兑换时间从早到晚分配至购买记录。冻结余额与可用余额互转不会重复计算。历史未关联的余额作为普通余额处理。商品只适用于运营方已配置为仅提供文字服务的客户范围，模型权限仍由实际分组配置决定。
+
+付款后 14 天内、整笔积分未消耗的客户可申请全额退款。申请冻结该笔权益；运营确认后根据原交易编号请求退款，未兑码失效，已兑未用积分只收回该笔。收到明确失败结果时退回冻结的权益，回执未知时仅查询原交易。外部商户自行退款、发生争议或部分退款时须人工对账。PostgreSQL 隔离测试使用模拟商户，验证签名、重复通知、本人兑换、多笔购买消费、超期、未兑及已兑退款、回执中断和兑换退款并发。[交易测试](../backend/internal/payment/integration/text_purchase_postgres_test.go)
+
+### 支付订单防重与收银台恢复（v0.2.22-fork.5）
+
+登录客户创建订单时可携带 `Idempotency-Key`。同一客户重复提交同一购买内容时返回原单，改换金额、方式或套餐会返回冲突。未携带标识的原有客户端可照常下单。迁移 254 为购买标识摘要建立客户内唯一约束，并为需要恢复的客户端支付参数预留加密列，既有订单可保留空值。
+
+`GET /api/v1/payment/orders/purchase` 使用当前客户身份和原请求头查询，`GET /api/v1/payment/orders/:id/checkout` 读取本人的收银台。收银信息中的 `purchase_recovery` 和客户订单中的 `checkout_recovery` 用于识别服务端能力。待付且未过期的订单可恢复已有链接或二维码。支持签名密钥的实例在创建 SDK 会话时加密保存客户侧参数，更换设备后仍须满足支付商自身的有效期和使用条件。终态和过期订单只返回订单结果。服务端不因读取恢复接口再向支付商下单。已在 SQLite 检查并发创建、内容冲突、本人查询及终态收银限制，并用 PostgreSQL 18 验证迁移保留旧订单及客户内唯一约束。[订单恢复实现](../backend/internal/service/payment_checkout_recovery.go) · [定向测试](../backend/internal/service/payment_checkout_recovery_test.go)
+
 ### 带来源的模型基础参考价（v0.2.22-fork.4）
 
 管理员通过 `GET /api/v1/admin/channels/model-reference-price?model=…` 查看指定型号的厂商目录参考。精确匹配且引用对应厂商资料时返回 `data.reference`，内含模型名、来源链接及有依据的每 Token 美元单价；未找到时为 null。模型广场的对应条目可含同一份 `vendor_reference`。原有查价接口及扣费逻辑继续提供既有行为。

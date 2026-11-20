@@ -57,6 +57,11 @@ func (PaymentOrder) Fields() []ent.Field {
 		field.String("recharge_code").
 			MaxLen(64),
 
+		// 同一客户的一次购买绑定一个订单。未传标识的既有客户可继续创建。
+		field.String("purchase_key_hash").MaxLen(64).Optional().Nillable().Sensitive(),
+		field.String("purchase_request_hash").MaxLen(64).Optional().Nillable().Sensitive(),
+		field.String("checkout_ciphertext").Optional().Nillable().Sensitive().SchemaType(map[string]string{dialect.Postgres: "text"}),
+
 		// 支付信息
 		field.String("out_trade_no").
 			MaxLen(64).
@@ -189,6 +194,7 @@ func (PaymentOrder) Edges() []ent.Edge {
 
 func (PaymentOrder) Indexes() []ent.Index {
 	return []ent.Index{
+		index.Fields("user_id", "purchase_key_hash").Unique().StorageKey("payment_orders_user_purchase_key"),
 		index.Fields("out_trade_no").
 			Unique().
 			Annotations(entsql.IndexWhere("out_trade_no <> ''")),

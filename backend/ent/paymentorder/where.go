@@ -100,6 +100,21 @@ func RechargeCode(v string) predicate.PaymentOrder {
 	return predicate.PaymentOrder(sql.FieldEQ(FieldRechargeCode, v))
 }
 
+// PurchaseKeyHash applies equality check predicate on the "purchase_key_hash" field. It's identical to PurchaseKeyHashEQ.
+func PurchaseKeyHash(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldPurchaseKeyHash, v))
+}
+
+// PurchaseRequestHash applies equality check predicate on the "purchase_request_hash" field. It's identical to PurchaseRequestHashEQ.
+func PurchaseRequestHash(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldPurchaseRequestHash, v))
+}
+
+// CheckoutCiphertext applies equality check predicate on the "checkout_ciphertext" field. It's identical to CheckoutCiphertextEQ.
+func CheckoutCiphertext(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldCheckoutCiphertext, v))
+}
+
 // OutTradeNo applies equality check predicate on the "out_trade_no" field. It's identical to OutTradeNoEQ.
 func OutTradeNo(v string) predicate.PaymentOrder {
 	return predicate.PaymentOrder(sql.FieldEQ(FieldOutTradeNo, v))
@@ -698,6 +713,231 @@ func RechargeCodeEqualFold(v string) predicate.PaymentOrder {
 // RechargeCodeContainsFold applies the ContainsFold predicate on the "recharge_code" field.
 func RechargeCodeContainsFold(v string) predicate.PaymentOrder {
 	return predicate.PaymentOrder(sql.FieldContainsFold(FieldRechargeCode, v))
+}
+
+// PurchaseKeyHashEQ applies the EQ predicate on the "purchase_key_hash" field.
+func PurchaseKeyHashEQ(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldPurchaseKeyHash, v))
+}
+
+// PurchaseKeyHashNEQ applies the NEQ predicate on the "purchase_key_hash" field.
+func PurchaseKeyHashNEQ(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNEQ(FieldPurchaseKeyHash, v))
+}
+
+// PurchaseKeyHashIn applies the In predicate on the "purchase_key_hash" field.
+func PurchaseKeyHashIn(vs ...string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIn(FieldPurchaseKeyHash, vs...))
+}
+
+// PurchaseKeyHashNotIn applies the NotIn predicate on the "purchase_key_hash" field.
+func PurchaseKeyHashNotIn(vs ...string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotIn(FieldPurchaseKeyHash, vs...))
+}
+
+// PurchaseKeyHashGT applies the GT predicate on the "purchase_key_hash" field.
+func PurchaseKeyHashGT(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGT(FieldPurchaseKeyHash, v))
+}
+
+// PurchaseKeyHashGTE applies the GTE predicate on the "purchase_key_hash" field.
+func PurchaseKeyHashGTE(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGTE(FieldPurchaseKeyHash, v))
+}
+
+// PurchaseKeyHashLT applies the LT predicate on the "purchase_key_hash" field.
+func PurchaseKeyHashLT(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLT(FieldPurchaseKeyHash, v))
+}
+
+// PurchaseKeyHashLTE applies the LTE predicate on the "purchase_key_hash" field.
+func PurchaseKeyHashLTE(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLTE(FieldPurchaseKeyHash, v))
+}
+
+// PurchaseKeyHashContains applies the Contains predicate on the "purchase_key_hash" field.
+func PurchaseKeyHashContains(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldContains(FieldPurchaseKeyHash, v))
+}
+
+// PurchaseKeyHashHasPrefix applies the HasPrefix predicate on the "purchase_key_hash" field.
+func PurchaseKeyHashHasPrefix(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldHasPrefix(FieldPurchaseKeyHash, v))
+}
+
+// PurchaseKeyHashHasSuffix applies the HasSuffix predicate on the "purchase_key_hash" field.
+func PurchaseKeyHashHasSuffix(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldHasSuffix(FieldPurchaseKeyHash, v))
+}
+
+// PurchaseKeyHashIsNil applies the IsNil predicate on the "purchase_key_hash" field.
+func PurchaseKeyHashIsNil() predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIsNull(FieldPurchaseKeyHash))
+}
+
+// PurchaseKeyHashNotNil applies the NotNil predicate on the "purchase_key_hash" field.
+func PurchaseKeyHashNotNil() predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotNull(FieldPurchaseKeyHash))
+}
+
+// PurchaseKeyHashEqualFold applies the EqualFold predicate on the "purchase_key_hash" field.
+func PurchaseKeyHashEqualFold(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEqualFold(FieldPurchaseKeyHash, v))
+}
+
+// PurchaseKeyHashContainsFold applies the ContainsFold predicate on the "purchase_key_hash" field.
+func PurchaseKeyHashContainsFold(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldContainsFold(FieldPurchaseKeyHash, v))
+}
+
+// PurchaseRequestHashEQ applies the EQ predicate on the "purchase_request_hash" field.
+func PurchaseRequestHashEQ(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldPurchaseRequestHash, v))
+}
+
+// PurchaseRequestHashNEQ applies the NEQ predicate on the "purchase_request_hash" field.
+func PurchaseRequestHashNEQ(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNEQ(FieldPurchaseRequestHash, v))
+}
+
+// PurchaseRequestHashIn applies the In predicate on the "purchase_request_hash" field.
+func PurchaseRequestHashIn(vs ...string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIn(FieldPurchaseRequestHash, vs...))
+}
+
+// PurchaseRequestHashNotIn applies the NotIn predicate on the "purchase_request_hash" field.
+func PurchaseRequestHashNotIn(vs ...string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotIn(FieldPurchaseRequestHash, vs...))
+}
+
+// PurchaseRequestHashGT applies the GT predicate on the "purchase_request_hash" field.
+func PurchaseRequestHashGT(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGT(FieldPurchaseRequestHash, v))
+}
+
+// PurchaseRequestHashGTE applies the GTE predicate on the "purchase_request_hash" field.
+func PurchaseRequestHashGTE(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGTE(FieldPurchaseRequestHash, v))
+}
+
+// PurchaseRequestHashLT applies the LT predicate on the "purchase_request_hash" field.
+func PurchaseRequestHashLT(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLT(FieldPurchaseRequestHash, v))
+}
+
+// PurchaseRequestHashLTE applies the LTE predicate on the "purchase_request_hash" field.
+func PurchaseRequestHashLTE(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLTE(FieldPurchaseRequestHash, v))
+}
+
+// PurchaseRequestHashContains applies the Contains predicate on the "purchase_request_hash" field.
+func PurchaseRequestHashContains(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldContains(FieldPurchaseRequestHash, v))
+}
+
+// PurchaseRequestHashHasPrefix applies the HasPrefix predicate on the "purchase_request_hash" field.
+func PurchaseRequestHashHasPrefix(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldHasPrefix(FieldPurchaseRequestHash, v))
+}
+
+// PurchaseRequestHashHasSuffix applies the HasSuffix predicate on the "purchase_request_hash" field.
+func PurchaseRequestHashHasSuffix(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldHasSuffix(FieldPurchaseRequestHash, v))
+}
+
+// PurchaseRequestHashIsNil applies the IsNil predicate on the "purchase_request_hash" field.
+func PurchaseRequestHashIsNil() predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIsNull(FieldPurchaseRequestHash))
+}
+
+// PurchaseRequestHashNotNil applies the NotNil predicate on the "purchase_request_hash" field.
+func PurchaseRequestHashNotNil() predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotNull(FieldPurchaseRequestHash))
+}
+
+// PurchaseRequestHashEqualFold applies the EqualFold predicate on the "purchase_request_hash" field.
+func PurchaseRequestHashEqualFold(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEqualFold(FieldPurchaseRequestHash, v))
+}
+
+// PurchaseRequestHashContainsFold applies the ContainsFold predicate on the "purchase_request_hash" field.
+func PurchaseRequestHashContainsFold(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldContainsFold(FieldPurchaseRequestHash, v))
+}
+
+// CheckoutCiphertextEQ applies the EQ predicate on the "checkout_ciphertext" field.
+func CheckoutCiphertextEQ(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldCheckoutCiphertext, v))
+}
+
+// CheckoutCiphertextNEQ applies the NEQ predicate on the "checkout_ciphertext" field.
+func CheckoutCiphertextNEQ(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNEQ(FieldCheckoutCiphertext, v))
+}
+
+// CheckoutCiphertextIn applies the In predicate on the "checkout_ciphertext" field.
+func CheckoutCiphertextIn(vs ...string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIn(FieldCheckoutCiphertext, vs...))
+}
+
+// CheckoutCiphertextNotIn applies the NotIn predicate on the "checkout_ciphertext" field.
+func CheckoutCiphertextNotIn(vs ...string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotIn(FieldCheckoutCiphertext, vs...))
+}
+
+// CheckoutCiphertextGT applies the GT predicate on the "checkout_ciphertext" field.
+func CheckoutCiphertextGT(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGT(FieldCheckoutCiphertext, v))
+}
+
+// CheckoutCiphertextGTE applies the GTE predicate on the "checkout_ciphertext" field.
+func CheckoutCiphertextGTE(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGTE(FieldCheckoutCiphertext, v))
+}
+
+// CheckoutCiphertextLT applies the LT predicate on the "checkout_ciphertext" field.
+func CheckoutCiphertextLT(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLT(FieldCheckoutCiphertext, v))
+}
+
+// CheckoutCiphertextLTE applies the LTE predicate on the "checkout_ciphertext" field.
+func CheckoutCiphertextLTE(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLTE(FieldCheckoutCiphertext, v))
+}
+
+// CheckoutCiphertextContains applies the Contains predicate on the "checkout_ciphertext" field.
+func CheckoutCiphertextContains(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldContains(FieldCheckoutCiphertext, v))
+}
+
+// CheckoutCiphertextHasPrefix applies the HasPrefix predicate on the "checkout_ciphertext" field.
+func CheckoutCiphertextHasPrefix(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldHasPrefix(FieldCheckoutCiphertext, v))
+}
+
+// CheckoutCiphertextHasSuffix applies the HasSuffix predicate on the "checkout_ciphertext" field.
+func CheckoutCiphertextHasSuffix(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldHasSuffix(FieldCheckoutCiphertext, v))
+}
+
+// CheckoutCiphertextIsNil applies the IsNil predicate on the "checkout_ciphertext" field.
+func CheckoutCiphertextIsNil() predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIsNull(FieldCheckoutCiphertext))
+}
+
+// CheckoutCiphertextNotNil applies the NotNil predicate on the "checkout_ciphertext" field.
+func CheckoutCiphertextNotNil() predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotNull(FieldCheckoutCiphertext))
+}
+
+// CheckoutCiphertextEqualFold applies the EqualFold predicate on the "checkout_ciphertext" field.
+func CheckoutCiphertextEqualFold(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEqualFold(FieldCheckoutCiphertext, v))
+}
+
+// CheckoutCiphertextContainsFold applies the ContainsFold predicate on the "checkout_ciphertext" field.
+func CheckoutCiphertextContainsFold(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldContainsFold(FieldCheckoutCiphertext, v))
 }
 
 // OutTradeNoEQ applies the EQ predicate on the "out_trade_no" field.

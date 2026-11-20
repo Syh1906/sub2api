@@ -32,6 +32,12 @@ const (
 	FieldBonusAmount = "bonus_amount"
 	// FieldRechargeCode holds the string denoting the recharge_code field in the database.
 	FieldRechargeCode = "recharge_code"
+	// FieldPurchaseKeyHash holds the string denoting the purchase_key_hash field in the database.
+	FieldPurchaseKeyHash = "purchase_key_hash"
+	// FieldPurchaseRequestHash holds the string denoting the purchase_request_hash field in the database.
+	FieldPurchaseRequestHash = "purchase_request_hash"
+	// FieldCheckoutCiphertext holds the string denoting the checkout_ciphertext field in the database.
+	FieldCheckoutCiphertext = "checkout_ciphertext"
 	// FieldOutTradeNo holds the string denoting the out_trade_no field in the database.
 	FieldOutTradeNo = "out_trade_no"
 	// FieldPaymentType holds the string denoting the payment_type field in the database.
@@ -119,6 +125,9 @@ var Columns = []string{
 	FieldFeeRate,
 	FieldBonusAmount,
 	FieldRechargeCode,
+	FieldPurchaseKeyHash,
+	FieldPurchaseRequestHash,
+	FieldCheckoutCiphertext,
 	FieldOutTradeNo,
 	FieldPaymentType,
 	FieldPaymentTradeNo,
@@ -173,6 +182,10 @@ var (
 	DefaultBonusAmount float64
 	// RechargeCodeValidator is a validator for the "recharge_code" field. It is called by the builders before save.
 	RechargeCodeValidator func(string) error
+	// PurchaseKeyHashValidator is a validator for the "purchase_key_hash" field. It is called by the builders before save.
+	PurchaseKeyHashValidator func(string) error
+	// PurchaseRequestHashValidator is a validator for the "purchase_request_hash" field. It is called by the builders before save.
+	PurchaseRequestHashValidator func(string) error
 	// DefaultOutTradeNo holds the default value on creation for the "out_trade_no" field.
 	DefaultOutTradeNo string
 	// OutTradeNoValidator is a validator for the "out_trade_no" field. It is called by the builders before save.
@@ -262,6 +275,21 @@ func ByBonusAmount(opts ...sql.OrderTermOption) OrderOption {
 // ByRechargeCode orders the results by the recharge_code field.
 func ByRechargeCode(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldRechargeCode, opts...).ToFunc()
+}
+
+// ByPurchaseKeyHash orders the results by the purchase_key_hash field.
+func ByPurchaseKeyHash(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPurchaseKeyHash, opts...).ToFunc()
+}
+
+// ByPurchaseRequestHash orders the results by the purchase_request_hash field.
+func ByPurchaseRequestHash(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPurchaseRequestHash, opts...).ToFunc()
+}
+
+// ByCheckoutCiphertext orders the results by the checkout_ciphertext field.
+func ByCheckoutCiphertext(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCheckoutCiphertext, opts...).ToFunc()
 }
 
 // ByOutTradeNo orders the results by the out_trade_no field.

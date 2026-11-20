@@ -189,6 +189,66 @@ func (_u *PaymentOrderUpdate) SetNillableRechargeCode(v *string) *PaymentOrderUp
 	return _u
 }
 
+// SetPurchaseKeyHash sets the "purchase_key_hash" field.
+func (_u *PaymentOrderUpdate) SetPurchaseKeyHash(v string) *PaymentOrderUpdate {
+	_u.mutation.SetPurchaseKeyHash(v)
+	return _u
+}
+
+// SetNillablePurchaseKeyHash sets the "purchase_key_hash" field if the given value is not nil.
+func (_u *PaymentOrderUpdate) SetNillablePurchaseKeyHash(v *string) *PaymentOrderUpdate {
+	if v != nil {
+		_u.SetPurchaseKeyHash(*v)
+	}
+	return _u
+}
+
+// ClearPurchaseKeyHash clears the value of the "purchase_key_hash" field.
+func (_u *PaymentOrderUpdate) ClearPurchaseKeyHash() *PaymentOrderUpdate {
+	_u.mutation.ClearPurchaseKeyHash()
+	return _u
+}
+
+// SetPurchaseRequestHash sets the "purchase_request_hash" field.
+func (_u *PaymentOrderUpdate) SetPurchaseRequestHash(v string) *PaymentOrderUpdate {
+	_u.mutation.SetPurchaseRequestHash(v)
+	return _u
+}
+
+// SetNillablePurchaseRequestHash sets the "purchase_request_hash" field if the given value is not nil.
+func (_u *PaymentOrderUpdate) SetNillablePurchaseRequestHash(v *string) *PaymentOrderUpdate {
+	if v != nil {
+		_u.SetPurchaseRequestHash(*v)
+	}
+	return _u
+}
+
+// ClearPurchaseRequestHash clears the value of the "purchase_request_hash" field.
+func (_u *PaymentOrderUpdate) ClearPurchaseRequestHash() *PaymentOrderUpdate {
+	_u.mutation.ClearPurchaseRequestHash()
+	return _u
+}
+
+// SetCheckoutCiphertext sets the "checkout_ciphertext" field.
+func (_u *PaymentOrderUpdate) SetCheckoutCiphertext(v string) *PaymentOrderUpdate {
+	_u.mutation.SetCheckoutCiphertext(v)
+	return _u
+}
+
+// SetNillableCheckoutCiphertext sets the "checkout_ciphertext" field if the given value is not nil.
+func (_u *PaymentOrderUpdate) SetNillableCheckoutCiphertext(v *string) *PaymentOrderUpdate {
+	if v != nil {
+		_u.SetCheckoutCiphertext(*v)
+	}
+	return _u
+}
+
+// ClearCheckoutCiphertext clears the value of the "checkout_ciphertext" field.
+func (_u *PaymentOrderUpdate) ClearCheckoutCiphertext() *PaymentOrderUpdate {
+	_u.mutation.ClearCheckoutCiphertext()
+	return _u
+}
+
 // SetOutTradeNo sets the "out_trade_no" field.
 func (_u *PaymentOrderUpdate) SetOutTradeNo(v string) *PaymentOrderUpdate {
 	_u.mutation.SetOutTradeNo(v)
@@ -804,6 +864,16 @@ func (_u *PaymentOrderUpdate) check() error {
 			return &ValidationError{Name: "recharge_code", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.recharge_code": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.PurchaseKeyHash(); ok {
+		if err := paymentorder.PurchaseKeyHashValidator(v); err != nil {
+			return &ValidationError{Name: "purchase_key_hash", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.purchase_key_hash": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.PurchaseRequestHash(); ok {
+		if err := paymentorder.PurchaseRequestHashValidator(v); err != nil {
+			return &ValidationError{Name: "purchase_request_hash", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.purchase_request_hash": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.OutTradeNo(); ok {
 		if err := paymentorder.OutTradeNoValidator(v); err != nil {
 			return &ValidationError{Name: "out_trade_no", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.out_trade_no": %w`, err)}
@@ -910,6 +980,24 @@ func (_u *PaymentOrderUpdate) sqlSave(ctx context.Context) (_node int, err error
 	}
 	if value, ok := _u.mutation.RechargeCode(); ok {
 		_spec.SetField(paymentorder.FieldRechargeCode, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.PurchaseKeyHash(); ok {
+		_spec.SetField(paymentorder.FieldPurchaseKeyHash, field.TypeString, value)
+	}
+	if _u.mutation.PurchaseKeyHashCleared() {
+		_spec.ClearField(paymentorder.FieldPurchaseKeyHash, field.TypeString)
+	}
+	if value, ok := _u.mutation.PurchaseRequestHash(); ok {
+		_spec.SetField(paymentorder.FieldPurchaseRequestHash, field.TypeString, value)
+	}
+	if _u.mutation.PurchaseRequestHashCleared() {
+		_spec.ClearField(paymentorder.FieldPurchaseRequestHash, field.TypeString)
+	}
+	if value, ok := _u.mutation.CheckoutCiphertext(); ok {
+		_spec.SetField(paymentorder.FieldCheckoutCiphertext, field.TypeString, value)
+	}
+	if _u.mutation.CheckoutCiphertextCleared() {
+		_spec.ClearField(paymentorder.FieldCheckoutCiphertext, field.TypeString)
 	}
 	if value, ok := _u.mutation.OutTradeNo(); ok {
 		_spec.SetField(paymentorder.FieldOutTradeNo, field.TypeString, value)
@@ -1276,6 +1364,66 @@ func (_u *PaymentOrderUpdateOne) SetNillableRechargeCode(v *string) *PaymentOrde
 	if v != nil {
 		_u.SetRechargeCode(*v)
 	}
+	return _u
+}
+
+// SetPurchaseKeyHash sets the "purchase_key_hash" field.
+func (_u *PaymentOrderUpdateOne) SetPurchaseKeyHash(v string) *PaymentOrderUpdateOne {
+	_u.mutation.SetPurchaseKeyHash(v)
+	return _u
+}
+
+// SetNillablePurchaseKeyHash sets the "purchase_key_hash" field if the given value is not nil.
+func (_u *PaymentOrderUpdateOne) SetNillablePurchaseKeyHash(v *string) *PaymentOrderUpdateOne {
+	if v != nil {
+		_u.SetPurchaseKeyHash(*v)
+	}
+	return _u
+}
+
+// ClearPurchaseKeyHash clears the value of the "purchase_key_hash" field.
+func (_u *PaymentOrderUpdateOne) ClearPurchaseKeyHash() *PaymentOrderUpdateOne {
+	_u.mutation.ClearPurchaseKeyHash()
+	return _u
+}
+
+// SetPurchaseRequestHash sets the "purchase_request_hash" field.
+func (_u *PaymentOrderUpdateOne) SetPurchaseRequestHash(v string) *PaymentOrderUpdateOne {
+	_u.mutation.SetPurchaseRequestHash(v)
+	return _u
+}
+
+// SetNillablePurchaseRequestHash sets the "purchase_request_hash" field if the given value is not nil.
+func (_u *PaymentOrderUpdateOne) SetNillablePurchaseRequestHash(v *string) *PaymentOrderUpdateOne {
+	if v != nil {
+		_u.SetPurchaseRequestHash(*v)
+	}
+	return _u
+}
+
+// ClearPurchaseRequestHash clears the value of the "purchase_request_hash" field.
+func (_u *PaymentOrderUpdateOne) ClearPurchaseRequestHash() *PaymentOrderUpdateOne {
+	_u.mutation.ClearPurchaseRequestHash()
+	return _u
+}
+
+// SetCheckoutCiphertext sets the "checkout_ciphertext" field.
+func (_u *PaymentOrderUpdateOne) SetCheckoutCiphertext(v string) *PaymentOrderUpdateOne {
+	_u.mutation.SetCheckoutCiphertext(v)
+	return _u
+}
+
+// SetNillableCheckoutCiphertext sets the "checkout_ciphertext" field if the given value is not nil.
+func (_u *PaymentOrderUpdateOne) SetNillableCheckoutCiphertext(v *string) *PaymentOrderUpdateOne {
+	if v != nil {
+		_u.SetCheckoutCiphertext(*v)
+	}
+	return _u
+}
+
+// ClearCheckoutCiphertext clears the value of the "checkout_ciphertext" field.
+func (_u *PaymentOrderUpdateOne) ClearCheckoutCiphertext() *PaymentOrderUpdateOne {
+	_u.mutation.ClearCheckoutCiphertext()
 	return _u
 }
 
@@ -1907,6 +2055,16 @@ func (_u *PaymentOrderUpdateOne) check() error {
 			return &ValidationError{Name: "recharge_code", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.recharge_code": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.PurchaseKeyHash(); ok {
+		if err := paymentorder.PurchaseKeyHashValidator(v); err != nil {
+			return &ValidationError{Name: "purchase_key_hash", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.purchase_key_hash": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.PurchaseRequestHash(); ok {
+		if err := paymentorder.PurchaseRequestHashValidator(v); err != nil {
+			return &ValidationError{Name: "purchase_request_hash", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.purchase_request_hash": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.OutTradeNo(); ok {
 		if err := paymentorder.OutTradeNoValidator(v); err != nil {
 			return &ValidationError{Name: "out_trade_no", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.out_trade_no": %w`, err)}
@@ -2030,6 +2188,24 @@ func (_u *PaymentOrderUpdateOne) sqlSave(ctx context.Context) (_node *PaymentOrd
 	}
 	if value, ok := _u.mutation.RechargeCode(); ok {
 		_spec.SetField(paymentorder.FieldRechargeCode, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.PurchaseKeyHash(); ok {
+		_spec.SetField(paymentorder.FieldPurchaseKeyHash, field.TypeString, value)
+	}
+	if _u.mutation.PurchaseKeyHashCleared() {
+		_spec.ClearField(paymentorder.FieldPurchaseKeyHash, field.TypeString)
+	}
+	if value, ok := _u.mutation.PurchaseRequestHash(); ok {
+		_spec.SetField(paymentorder.FieldPurchaseRequestHash, field.TypeString, value)
+	}
+	if _u.mutation.PurchaseRequestHashCleared() {
+		_spec.ClearField(paymentorder.FieldPurchaseRequestHash, field.TypeString)
+	}
+	if value, ok := _u.mutation.CheckoutCiphertext(); ok {
+		_spec.SetField(paymentorder.FieldCheckoutCiphertext, field.TypeString, value)
+	}
+	if _u.mutation.CheckoutCiphertextCleared() {
+		_spec.ClearField(paymentorder.FieldCheckoutCiphertext, field.TypeString)
 	}
 	if value, ok := _u.mutation.OutTradeNo(); ok {
 		_spec.SetField(paymentorder.FieldOutTradeNo, field.TypeString, value)

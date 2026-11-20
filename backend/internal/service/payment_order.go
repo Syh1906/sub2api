@@ -29,12 +29,21 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 	if normalized := NormalizeVisibleMethod(req.PaymentType); normalized != "" {
 		req.PaymentType = normalized
 	}
+	if err := req.preparePurchaseIdentity(); err != nil {
+		return nil, err
+	}
+	if prior, err := s.findPurchase(ctx, req); prior != nil || err != nil {
+		return prior, err
+	}
 	cfg, err := s.configService.GetPaymentConfig(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get payment config: %w", err)
 	}
 	if !cfg.Enabled {
 		return nil, infraerrors.Forbidden("PAYMENT_DISABLED", "payment system is disabled")
+	}
+	if req.OrderType == TextVoucherOrder {
+		return s.createTextOrder(ctx, req, cfg)
 	}
 	plan, err := s.validateOrderInput(ctx, req, cfg)
 	if err != nil {
@@ -107,11 +116,15 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 	}
 	order, err := s.createOrderInTx(ctx, req, user, plan, cfg, orderAmount, limitAmount, feeRate, payAmount, bonusAmount, sel)
 	if err != nil {
+		// 并发请求可能刚刚提交了同一个购买，事务失败后在新读取中核对原单。
+		if prior, lookupErr := s.findPurchase(ctx, req); prior != nil || lookupErr != nil {
+			return prior, lookupErr
+		}
 		return nil, err
 	}
 	resp, err := s.invokeProvider(ctx, order, req, cfg, limitAmount, payAmountStr, payAmount, plan, sel)
 	if err != nil {
-		_, _ = s.entClient.PaymentOrder.UpdateOneID(order.ID).
+		_, _ = s.entClient.PaymentOrder.Update().Where(paymentorder.ID(order.ID), paymentorder.StatusEQ(OrderStatusPending)).
 			SetStatus(OrderStatusFailed).
 			Save(ctx)
 		return nil, err
@@ -181,6 +194,9 @@ func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderReq
 		return nil, err
 	}
 	providerSnapshot := buildPaymentOrderProviderSnapshot(sel, req)
+	if req.OrderType == TextVoucherOrder {
+		providerSnapshot = map[string]any{"schema_version": 2, "provider_key": "creem", "currency": "USD", "product": sel.Config["product"], "mode": sel.Config["mode"]}
+	}
 	selectedInstanceID := ""
 	selectedProviderKey := ""
 	if sel != nil {
@@ -205,6 +221,9 @@ func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderReq
 		SetExpiresAt(exp).
 		SetClientIP(req.ClientIP).
 		SetSrcHost(req.SrcHost)
+	if req.purchaseKeyHash != "" {
+		b.SetPurchaseKeyHash(req.purchaseKeyHash).SetPurchaseRequestHash(req.purchaseRequestHash)
+	}
 	if req.SrcURL != "" {
 		b.SetSrcURL(req.SrcURL)
 	}
@@ -469,13 +488,29 @@ func (s *PaymentService) invokeProvider(ctx context.Context, order *dbent.Paymen
 		return nil, classifyCreatePaymentError(req, sel.ProviderKey, err)
 	}
 	sanitizeCreatePaymentResponseDetails(pr)
-	_, err = s.entClient.PaymentOrder.UpdateOneID(order.ID).
+	resultType := pr.ResultType
+	if resultType == "" {
+		resultType = payment.CreatePaymentResultOrderCreated
+	}
+	resp := buildCreateOrderResponse(order, req, payAmount, sel, pr, resultType)
+	resp.ResumeToken = resumeToken
+	resp.AlipayMobilePrecreateDeepLink = providerReq.AlipayMobilePrecreate && strings.TrimSpace(pr.QRCode) != ""
+	update := s.entClient.PaymentOrder.UpdateOneID(order.ID).
 		SetNillablePaymentTradeNo(psNilIfEmpty(pr.TradeNo)).
 		SetNillablePayURL(psNilIfEmpty(pr.PayURL)).
 		SetNillableQrCode(psNilIfEmpty(pr.QRCode)).
 		SetNillableProviderInstanceID(psNilIfEmpty(sel.InstanceID)).
-		SetNillableProviderKey(psNilIfEmpty(sel.ProviderKey)).
-		Save(ctx)
+		SetNillableProviderKey(psNilIfEmpty(sel.ProviderKey))
+	if resp.ClientSecret != "" || resp.JSAPI != nil || resp.JSAPIPayload != nil {
+		ciphertext, err := s.sealCheckout(resp)
+		if err != nil {
+			return nil, err
+		}
+		if ciphertext != "" {
+			update.SetCheckoutCiphertext(ciphertext)
+		}
+	}
+	_, err = update.Save(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("update order with payment details: %w", err)
 	}
@@ -488,13 +523,6 @@ func (s *PaymentService) invokeProvider(ctx context.Context, order *dbent.Paymen
 		"orderType":      req.OrderType,
 		"paymentSource":  NormalizePaymentSource(req.PaymentSource),
 	})
-	resultType := pr.ResultType
-	if resultType == "" {
-		resultType = payment.CreatePaymentResultOrderCreated
-	}
-	resp := buildCreateOrderResponse(order, req, payAmount, sel, pr, resultType)
-	resp.ResumeToken = resumeToken
-	resp.AlipayMobilePrecreateDeepLink = providerReq.AlipayMobilePrecreate && strings.TrimSpace(pr.QRCode) != ""
 	return resp, nil
 }
 

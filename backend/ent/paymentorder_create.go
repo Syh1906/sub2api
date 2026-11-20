@@ -101,6 +101,48 @@ func (_c *PaymentOrderCreate) SetRechargeCode(v string) *PaymentOrderCreate {
 	return _c
 }
 
+// SetPurchaseKeyHash sets the "purchase_key_hash" field.
+func (_c *PaymentOrderCreate) SetPurchaseKeyHash(v string) *PaymentOrderCreate {
+	_c.mutation.SetPurchaseKeyHash(v)
+	return _c
+}
+
+// SetNillablePurchaseKeyHash sets the "purchase_key_hash" field if the given value is not nil.
+func (_c *PaymentOrderCreate) SetNillablePurchaseKeyHash(v *string) *PaymentOrderCreate {
+	if v != nil {
+		_c.SetPurchaseKeyHash(*v)
+	}
+	return _c
+}
+
+// SetPurchaseRequestHash sets the "purchase_request_hash" field.
+func (_c *PaymentOrderCreate) SetPurchaseRequestHash(v string) *PaymentOrderCreate {
+	_c.mutation.SetPurchaseRequestHash(v)
+	return _c
+}
+
+// SetNillablePurchaseRequestHash sets the "purchase_request_hash" field if the given value is not nil.
+func (_c *PaymentOrderCreate) SetNillablePurchaseRequestHash(v *string) *PaymentOrderCreate {
+	if v != nil {
+		_c.SetPurchaseRequestHash(*v)
+	}
+	return _c
+}
+
+// SetCheckoutCiphertext sets the "checkout_ciphertext" field.
+func (_c *PaymentOrderCreate) SetCheckoutCiphertext(v string) *PaymentOrderCreate {
+	_c.mutation.SetCheckoutCiphertext(v)
+	return _c
+}
+
+// SetNillableCheckoutCiphertext sets the "checkout_ciphertext" field if the given value is not nil.
+func (_c *PaymentOrderCreate) SetNillableCheckoutCiphertext(v *string) *PaymentOrderCreate {
+	if v != nil {
+		_c.SetCheckoutCiphertext(*v)
+	}
+	return _c
+}
+
 // SetOutTradeNo sets the "out_trade_no" field.
 func (_c *PaymentOrderCreate) SetOutTradeNo(v string) *PaymentOrderCreate {
 	_c.mutation.SetOutTradeNo(v)
@@ -606,6 +648,16 @@ func (_c *PaymentOrderCreate) check() error {
 			return &ValidationError{Name: "recharge_code", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.recharge_code": %w`, err)}
 		}
 	}
+	if v, ok := _c.mutation.PurchaseKeyHash(); ok {
+		if err := paymentorder.PurchaseKeyHashValidator(v); err != nil {
+			return &ValidationError{Name: "purchase_key_hash", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.purchase_key_hash": %w`, err)}
+		}
+	}
+	if v, ok := _c.mutation.PurchaseRequestHash(); ok {
+		if err := paymentorder.PurchaseRequestHashValidator(v); err != nil {
+			return &ValidationError{Name: "purchase_request_hash", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.purchase_request_hash": %w`, err)}
+		}
+	}
 	if _, ok := _c.mutation.OutTradeNo(); !ok {
 		return &ValidationError{Name: "out_trade_no", err: errors.New(`ent: missing required field "PaymentOrder.out_trade_no"`)}
 	}
@@ -753,6 +805,18 @@ func (_c *PaymentOrderCreate) createSpec() (*PaymentOrder, *sqlgraph.CreateSpec)
 	if value, ok := _c.mutation.RechargeCode(); ok {
 		_spec.SetField(paymentorder.FieldRechargeCode, field.TypeString, value)
 		_node.RechargeCode = value
+	}
+	if value, ok := _c.mutation.PurchaseKeyHash(); ok {
+		_spec.SetField(paymentorder.FieldPurchaseKeyHash, field.TypeString, value)
+		_node.PurchaseKeyHash = &value
+	}
+	if value, ok := _c.mutation.PurchaseRequestHash(); ok {
+		_spec.SetField(paymentorder.FieldPurchaseRequestHash, field.TypeString, value)
+		_node.PurchaseRequestHash = &value
+	}
+	if value, ok := _c.mutation.CheckoutCiphertext(); ok {
+		_spec.SetField(paymentorder.FieldCheckoutCiphertext, field.TypeString, value)
+		_node.CheckoutCiphertext = &value
 	}
 	if value, ok := _c.mutation.OutTradeNo(); ok {
 		_spec.SetField(paymentorder.FieldOutTradeNo, field.TypeString, value)
@@ -1082,6 +1146,60 @@ func (u *PaymentOrderUpsert) SetRechargeCode(v string) *PaymentOrderUpsert {
 // UpdateRechargeCode sets the "recharge_code" field to the value that was provided on create.
 func (u *PaymentOrderUpsert) UpdateRechargeCode() *PaymentOrderUpsert {
 	u.SetExcluded(paymentorder.FieldRechargeCode)
+	return u
+}
+
+// SetPurchaseKeyHash sets the "purchase_key_hash" field.
+func (u *PaymentOrderUpsert) SetPurchaseKeyHash(v string) *PaymentOrderUpsert {
+	u.Set(paymentorder.FieldPurchaseKeyHash, v)
+	return u
+}
+
+// UpdatePurchaseKeyHash sets the "purchase_key_hash" field to the value that was provided on create.
+func (u *PaymentOrderUpsert) UpdatePurchaseKeyHash() *PaymentOrderUpsert {
+	u.SetExcluded(paymentorder.FieldPurchaseKeyHash)
+	return u
+}
+
+// ClearPurchaseKeyHash clears the value of the "purchase_key_hash" field.
+func (u *PaymentOrderUpsert) ClearPurchaseKeyHash() *PaymentOrderUpsert {
+	u.SetNull(paymentorder.FieldPurchaseKeyHash)
+	return u
+}
+
+// SetPurchaseRequestHash sets the "purchase_request_hash" field.
+func (u *PaymentOrderUpsert) SetPurchaseRequestHash(v string) *PaymentOrderUpsert {
+	u.Set(paymentorder.FieldPurchaseRequestHash, v)
+	return u
+}
+
+// UpdatePurchaseRequestHash sets the "purchase_request_hash" field to the value that was provided on create.
+func (u *PaymentOrderUpsert) UpdatePurchaseRequestHash() *PaymentOrderUpsert {
+	u.SetExcluded(paymentorder.FieldPurchaseRequestHash)
+	return u
+}
+
+// ClearPurchaseRequestHash clears the value of the "purchase_request_hash" field.
+func (u *PaymentOrderUpsert) ClearPurchaseRequestHash() *PaymentOrderUpsert {
+	u.SetNull(paymentorder.FieldPurchaseRequestHash)
+	return u
+}
+
+// SetCheckoutCiphertext sets the "checkout_ciphertext" field.
+func (u *PaymentOrderUpsert) SetCheckoutCiphertext(v string) *PaymentOrderUpsert {
+	u.Set(paymentorder.FieldCheckoutCiphertext, v)
+	return u
+}
+
+// UpdateCheckoutCiphertext sets the "checkout_ciphertext" field to the value that was provided on create.
+func (u *PaymentOrderUpsert) UpdateCheckoutCiphertext() *PaymentOrderUpsert {
+	u.SetExcluded(paymentorder.FieldCheckoutCiphertext)
+	return u
+}
+
+// ClearCheckoutCiphertext clears the value of the "checkout_ciphertext" field.
+func (u *PaymentOrderUpsert) ClearCheckoutCiphertext() *PaymentOrderUpsert {
+	u.SetNull(paymentorder.FieldCheckoutCiphertext)
 	return u
 }
 
@@ -1786,6 +1904,69 @@ func (u *PaymentOrderUpsertOne) SetRechargeCode(v string) *PaymentOrderUpsertOne
 func (u *PaymentOrderUpsertOne) UpdateRechargeCode() *PaymentOrderUpsertOne {
 	return u.Update(func(s *PaymentOrderUpsert) {
 		s.UpdateRechargeCode()
+	})
+}
+
+// SetPurchaseKeyHash sets the "purchase_key_hash" field.
+func (u *PaymentOrderUpsertOne) SetPurchaseKeyHash(v string) *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetPurchaseKeyHash(v)
+	})
+}
+
+// UpdatePurchaseKeyHash sets the "purchase_key_hash" field to the value that was provided on create.
+func (u *PaymentOrderUpsertOne) UpdatePurchaseKeyHash() *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdatePurchaseKeyHash()
+	})
+}
+
+// ClearPurchaseKeyHash clears the value of the "purchase_key_hash" field.
+func (u *PaymentOrderUpsertOne) ClearPurchaseKeyHash() *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.ClearPurchaseKeyHash()
+	})
+}
+
+// SetPurchaseRequestHash sets the "purchase_request_hash" field.
+func (u *PaymentOrderUpsertOne) SetPurchaseRequestHash(v string) *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetPurchaseRequestHash(v)
+	})
+}
+
+// UpdatePurchaseRequestHash sets the "purchase_request_hash" field to the value that was provided on create.
+func (u *PaymentOrderUpsertOne) UpdatePurchaseRequestHash() *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdatePurchaseRequestHash()
+	})
+}
+
+// ClearPurchaseRequestHash clears the value of the "purchase_request_hash" field.
+func (u *PaymentOrderUpsertOne) ClearPurchaseRequestHash() *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.ClearPurchaseRequestHash()
+	})
+}
+
+// SetCheckoutCiphertext sets the "checkout_ciphertext" field.
+func (u *PaymentOrderUpsertOne) SetCheckoutCiphertext(v string) *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetCheckoutCiphertext(v)
+	})
+}
+
+// UpdateCheckoutCiphertext sets the "checkout_ciphertext" field to the value that was provided on create.
+func (u *PaymentOrderUpsertOne) UpdateCheckoutCiphertext() *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateCheckoutCiphertext()
+	})
+}
+
+// ClearCheckoutCiphertext clears the value of the "checkout_ciphertext" field.
+func (u *PaymentOrderUpsertOne) ClearCheckoutCiphertext() *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.ClearCheckoutCiphertext()
 	})
 }
 
@@ -2739,6 +2920,69 @@ func (u *PaymentOrderUpsertBulk) SetRechargeCode(v string) *PaymentOrderUpsertBu
 func (u *PaymentOrderUpsertBulk) UpdateRechargeCode() *PaymentOrderUpsertBulk {
 	return u.Update(func(s *PaymentOrderUpsert) {
 		s.UpdateRechargeCode()
+	})
+}
+
+// SetPurchaseKeyHash sets the "purchase_key_hash" field.
+func (u *PaymentOrderUpsertBulk) SetPurchaseKeyHash(v string) *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetPurchaseKeyHash(v)
+	})
+}
+
+// UpdatePurchaseKeyHash sets the "purchase_key_hash" field to the value that was provided on create.
+func (u *PaymentOrderUpsertBulk) UpdatePurchaseKeyHash() *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdatePurchaseKeyHash()
+	})
+}
+
+// ClearPurchaseKeyHash clears the value of the "purchase_key_hash" field.
+func (u *PaymentOrderUpsertBulk) ClearPurchaseKeyHash() *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.ClearPurchaseKeyHash()
+	})
+}
+
+// SetPurchaseRequestHash sets the "purchase_request_hash" field.
+func (u *PaymentOrderUpsertBulk) SetPurchaseRequestHash(v string) *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetPurchaseRequestHash(v)
+	})
+}
+
+// UpdatePurchaseRequestHash sets the "purchase_request_hash" field to the value that was provided on create.
+func (u *PaymentOrderUpsertBulk) UpdatePurchaseRequestHash() *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdatePurchaseRequestHash()
+	})
+}
+
+// ClearPurchaseRequestHash clears the value of the "purchase_request_hash" field.
+func (u *PaymentOrderUpsertBulk) ClearPurchaseRequestHash() *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.ClearPurchaseRequestHash()
+	})
+}
+
+// SetCheckoutCiphertext sets the "checkout_ciphertext" field.
+func (u *PaymentOrderUpsertBulk) SetCheckoutCiphertext(v string) *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetCheckoutCiphertext(v)
+	})
+}
+
+// UpdateCheckoutCiphertext sets the "checkout_ciphertext" field to the value that was provided on create.
+func (u *PaymentOrderUpsertBulk) UpdateCheckoutCiphertext() *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateCheckoutCiphertext()
+	})
+}
+
+// ClearCheckoutCiphertext clears the value of the "checkout_ciphertext" field.
+func (u *PaymentOrderUpsertBulk) ClearCheckoutCiphertext() *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.ClearCheckoutCiphertext()
 	})
 }
 

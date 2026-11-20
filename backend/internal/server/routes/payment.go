@@ -44,6 +44,7 @@ func RegisterPaymentRoutes(
 	authenticated.Use(panelRateLimiter.Global())
 	{
 		authenticated.GET("/config", paymentHandler.GetPaymentConfig)
+		authenticated.GET("/text-offers", paymentHandler.TextOffers)
 		authenticated.GET("/checkout-info", paymentHandler.GetCheckoutInfo)
 		authenticated.GET("/plans", paymentHandler.GetPlans)
 		authenticated.GET("/limits", paymentHandler.GetLimits)
@@ -52,8 +53,10 @@ func RegisterPaymentRoutes(
 		{
 			orders.POST("", paymentHandler.CreateOrder)
 			orders.POST("/verify", paymentHandler.VerifyOrder)
+			orders.GET("/purchase", paymentHandler.LookupPurchase)
 			orders.GET("/my", paymentHandler.GetMyOrders)
 			orders.GET("/:id", paymentHandler.GetOrder)
+			orders.GET("/:id/checkout", paymentHandler.ResumeCheckout)
 			orders.POST("/:id/cancel", paymentHandler.CancelOrder)
 			orders.POST("/:id/refund-request", paymentHandler.RequestRefund)
 			orders.GET("/refund-eligible-providers", paymentHandler.GetRefundEligibleProviders)
@@ -84,6 +87,7 @@ func RegisterPaymentRoutes(
 		webhook.POST("/easypay", webhookHandler.EasyPayNotify)
 		webhook.POST("/alipay", webhookHandler.AlipayNotify)
 		webhook.POST("/wxpay", webhookHandler.WxpayNotify)
+		webhook.POST("/creem", paymentHandler.CreemWebhook)
 		webhook.POST("/stripe", webhookHandler.StripeWebhook)
 		webhook.POST("/airwallex", webhookHandler.AirwallexWebhook)
 	}

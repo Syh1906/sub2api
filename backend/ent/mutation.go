@@ -30278,6 +30278,9 @@ type PaymentOrderMutation struct {
 	bonus_amount             *float64
 	addbonus_amount          *float64
 	recharge_code            *string
+	purchase_key_hash        *string
+	purchase_request_hash    *string
+	checkout_ciphertext      *string
 	out_trade_no             *string
 	payment_type             *string
 	payment_trade_no         *string
@@ -30834,6 +30837,153 @@ func (m *PaymentOrderMutation) OldRechargeCode(ctx context.Context) (v string, e
 // ResetRechargeCode resets all changes to the "recharge_code" field.
 func (m *PaymentOrderMutation) ResetRechargeCode() {
 	m.recharge_code = nil
+}
+
+// SetPurchaseKeyHash sets the "purchase_key_hash" field.
+func (m *PaymentOrderMutation) SetPurchaseKeyHash(s string) {
+	m.purchase_key_hash = &s
+}
+
+// PurchaseKeyHash returns the value of the "purchase_key_hash" field in the mutation.
+func (m *PaymentOrderMutation) PurchaseKeyHash() (r string, exists bool) {
+	v := m.purchase_key_hash
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPurchaseKeyHash returns the old "purchase_key_hash" field's value of the PaymentOrder entity.
+// If the PaymentOrder object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentOrderMutation) OldPurchaseKeyHash(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPurchaseKeyHash is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPurchaseKeyHash requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPurchaseKeyHash: %w", err)
+	}
+	return oldValue.PurchaseKeyHash, nil
+}
+
+// ClearPurchaseKeyHash clears the value of the "purchase_key_hash" field.
+func (m *PaymentOrderMutation) ClearPurchaseKeyHash() {
+	m.purchase_key_hash = nil
+	m.clearedFields[paymentorder.FieldPurchaseKeyHash] = struct{}{}
+}
+
+// PurchaseKeyHashCleared returns if the "purchase_key_hash" field was cleared in this mutation.
+func (m *PaymentOrderMutation) PurchaseKeyHashCleared() bool {
+	_, ok := m.clearedFields[paymentorder.FieldPurchaseKeyHash]
+	return ok
+}
+
+// ResetPurchaseKeyHash resets all changes to the "purchase_key_hash" field.
+func (m *PaymentOrderMutation) ResetPurchaseKeyHash() {
+	m.purchase_key_hash = nil
+	delete(m.clearedFields, paymentorder.FieldPurchaseKeyHash)
+}
+
+// SetPurchaseRequestHash sets the "purchase_request_hash" field.
+func (m *PaymentOrderMutation) SetPurchaseRequestHash(s string) {
+	m.purchase_request_hash = &s
+}
+
+// PurchaseRequestHash returns the value of the "purchase_request_hash" field in the mutation.
+func (m *PaymentOrderMutation) PurchaseRequestHash() (r string, exists bool) {
+	v := m.purchase_request_hash
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPurchaseRequestHash returns the old "purchase_request_hash" field's value of the PaymentOrder entity.
+// If the PaymentOrder object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentOrderMutation) OldPurchaseRequestHash(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPurchaseRequestHash is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPurchaseRequestHash requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPurchaseRequestHash: %w", err)
+	}
+	return oldValue.PurchaseRequestHash, nil
+}
+
+// ClearPurchaseRequestHash clears the value of the "purchase_request_hash" field.
+func (m *PaymentOrderMutation) ClearPurchaseRequestHash() {
+	m.purchase_request_hash = nil
+	m.clearedFields[paymentorder.FieldPurchaseRequestHash] = struct{}{}
+}
+
+// PurchaseRequestHashCleared returns if the "purchase_request_hash" field was cleared in this mutation.
+func (m *PaymentOrderMutation) PurchaseRequestHashCleared() bool {
+	_, ok := m.clearedFields[paymentorder.FieldPurchaseRequestHash]
+	return ok
+}
+
+// ResetPurchaseRequestHash resets all changes to the "purchase_request_hash" field.
+func (m *PaymentOrderMutation) ResetPurchaseRequestHash() {
+	m.purchase_request_hash = nil
+	delete(m.clearedFields, paymentorder.FieldPurchaseRequestHash)
+}
+
+// SetCheckoutCiphertext sets the "checkout_ciphertext" field.
+func (m *PaymentOrderMutation) SetCheckoutCiphertext(s string) {
+	m.checkout_ciphertext = &s
+}
+
+// CheckoutCiphertext returns the value of the "checkout_ciphertext" field in the mutation.
+func (m *PaymentOrderMutation) CheckoutCiphertext() (r string, exists bool) {
+	v := m.checkout_ciphertext
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCheckoutCiphertext returns the old "checkout_ciphertext" field's value of the PaymentOrder entity.
+// If the PaymentOrder object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentOrderMutation) OldCheckoutCiphertext(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCheckoutCiphertext is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCheckoutCiphertext requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCheckoutCiphertext: %w", err)
+	}
+	return oldValue.CheckoutCiphertext, nil
+}
+
+// ClearCheckoutCiphertext clears the value of the "checkout_ciphertext" field.
+func (m *PaymentOrderMutation) ClearCheckoutCiphertext() {
+	m.checkout_ciphertext = nil
+	m.clearedFields[paymentorder.FieldCheckoutCiphertext] = struct{}{}
+}
+
+// CheckoutCiphertextCleared returns if the "checkout_ciphertext" field was cleared in this mutation.
+func (m *PaymentOrderMutation) CheckoutCiphertextCleared() bool {
+	_, ok := m.clearedFields[paymentorder.FieldCheckoutCiphertext]
+	return ok
+}
+
+// ResetCheckoutCiphertext resets all changes to the "checkout_ciphertext" field.
+func (m *PaymentOrderMutation) ResetCheckoutCiphertext() {
+	m.checkout_ciphertext = nil
+	delete(m.clearedFields, paymentorder.FieldCheckoutCiphertext)
 }
 
 // SetOutTradeNo sets the "out_trade_no" field.
@@ -32343,7 +32493,7 @@ func (m *PaymentOrderMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *PaymentOrderMutation) Fields() []string {
-	fields := make([]string, 0, 40)
+	fields := make([]string, 0, 43)
 	if m.user != nil {
 		fields = append(fields, paymentorder.FieldUserID)
 	}
@@ -32370,6 +32520,15 @@ func (m *PaymentOrderMutation) Fields() []string {
 	}
 	if m.recharge_code != nil {
 		fields = append(fields, paymentorder.FieldRechargeCode)
+	}
+	if m.purchase_key_hash != nil {
+		fields = append(fields, paymentorder.FieldPurchaseKeyHash)
+	}
+	if m.purchase_request_hash != nil {
+		fields = append(fields, paymentorder.FieldPurchaseRequestHash)
+	}
+	if m.checkout_ciphertext != nil {
+		fields = append(fields, paymentorder.FieldCheckoutCiphertext)
 	}
 	if m.out_trade_no != nil {
 		fields = append(fields, paymentorder.FieldOutTradeNo)
@@ -32490,6 +32649,12 @@ func (m *PaymentOrderMutation) Field(name string) (ent.Value, bool) {
 		return m.BonusAmount()
 	case paymentorder.FieldRechargeCode:
 		return m.RechargeCode()
+	case paymentorder.FieldPurchaseKeyHash:
+		return m.PurchaseKeyHash()
+	case paymentorder.FieldPurchaseRequestHash:
+		return m.PurchaseRequestHash()
+	case paymentorder.FieldCheckoutCiphertext:
+		return m.CheckoutCiphertext()
 	case paymentorder.FieldOutTradeNo:
 		return m.OutTradeNo()
 	case paymentorder.FieldPaymentType:
@@ -32579,6 +32744,12 @@ func (m *PaymentOrderMutation) OldField(ctx context.Context, name string) (ent.V
 		return m.OldBonusAmount(ctx)
 	case paymentorder.FieldRechargeCode:
 		return m.OldRechargeCode(ctx)
+	case paymentorder.FieldPurchaseKeyHash:
+		return m.OldPurchaseKeyHash(ctx)
+	case paymentorder.FieldPurchaseRequestHash:
+		return m.OldPurchaseRequestHash(ctx)
+	case paymentorder.FieldCheckoutCiphertext:
+		return m.OldCheckoutCiphertext(ctx)
 	case paymentorder.FieldOutTradeNo:
 		return m.OldOutTradeNo(ctx)
 	case paymentorder.FieldPaymentType:
@@ -32712,6 +32883,27 @@ func (m *PaymentOrderMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetRechargeCode(v)
+		return nil
+	case paymentorder.FieldPurchaseKeyHash:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPurchaseKeyHash(v)
+		return nil
+	case paymentorder.FieldPurchaseRequestHash:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPurchaseRequestHash(v)
+		return nil
+	case paymentorder.FieldCheckoutCiphertext:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCheckoutCiphertext(v)
 		return nil
 	case paymentorder.FieldOutTradeNo:
 		v, ok := value.(string)
@@ -33062,6 +33254,15 @@ func (m *PaymentOrderMutation) ClearedFields() []string {
 	if m.FieldCleared(paymentorder.FieldUserNotes) {
 		fields = append(fields, paymentorder.FieldUserNotes)
 	}
+	if m.FieldCleared(paymentorder.FieldPurchaseKeyHash) {
+		fields = append(fields, paymentorder.FieldPurchaseKeyHash)
+	}
+	if m.FieldCleared(paymentorder.FieldPurchaseRequestHash) {
+		fields = append(fields, paymentorder.FieldPurchaseRequestHash)
+	}
+	if m.FieldCleared(paymentorder.FieldCheckoutCiphertext) {
+		fields = append(fields, paymentorder.FieldCheckoutCiphertext)
+	}
 	if m.FieldCleared(paymentorder.FieldPayURL) {
 		fields = append(fields, paymentorder.FieldPayURL)
 	}
@@ -33135,6 +33336,15 @@ func (m *PaymentOrderMutation) ClearField(name string) error {
 	switch name {
 	case paymentorder.FieldUserNotes:
 		m.ClearUserNotes()
+		return nil
+	case paymentorder.FieldPurchaseKeyHash:
+		m.ClearPurchaseKeyHash()
+		return nil
+	case paymentorder.FieldPurchaseRequestHash:
+		m.ClearPurchaseRequestHash()
+		return nil
+	case paymentorder.FieldCheckoutCiphertext:
+		m.ClearCheckoutCiphertext()
 		return nil
 	case paymentorder.FieldPayURL:
 		m.ClearPayURL()
@@ -33227,6 +33437,15 @@ func (m *PaymentOrderMutation) ResetField(name string) error {
 		return nil
 	case paymentorder.FieldRechargeCode:
 		m.ResetRechargeCode()
+		return nil
+	case paymentorder.FieldPurchaseKeyHash:
+		m.ResetPurchaseKeyHash()
+		return nil
+	case paymentorder.FieldPurchaseRequestHash:
+		m.ResetPurchaseRequestHash()
+		return nil
+	case paymentorder.FieldCheckoutCiphertext:
+		m.ResetCheckoutCiphertext()
 		return nil
 	case paymentorder.FieldOutTradeNo:
 		m.ResetOutTradeNo()

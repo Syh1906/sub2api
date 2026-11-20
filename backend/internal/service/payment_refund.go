@@ -159,6 +159,9 @@ func (s *PaymentService) RequestRefund(ctx context.Context, oid, uid int64, reas
 	if err != nil {
 		return err
 	}
+	if o.OrderType == TextVoucherOrder {
+		return s.requestTextRefund(ctx, oid, uid, reason)
+	}
 	u, err := s.userRepo.GetByID(ctx, o.UserID)
 	if err != nil {
 		return fmt.Errorf("get user: %w", err)
@@ -188,6 +191,9 @@ func (s *PaymentService) validateRefundRequest(ctx context.Context, oid, uid int
 	if o.UserID != uid {
 		return nil, infraerrors.Forbidden("FORBIDDEN", "no permission")
 	}
+	if o.OrderType == TextVoucherOrder {
+		return o, nil
+	}
 	if o.OrderType != payment.OrderTypeBalance {
 		return nil, infraerrors.BadRequest("INVALID_ORDER_TYPE", "only balance orders can request refund")
 	}
@@ -209,6 +215,12 @@ func (s *PaymentService) PrepareRefund(ctx context.Context, oid int64, amt float
 	o, err := s.entClient.PaymentOrder.Get(ctx, oid)
 	if err != nil {
 		return nil, nil, infraerrors.NotFound("NOT_FOUND", "order not found")
+	}
+	if o.OrderType == TextVoucherOrder {
+		if amt != o.Amount || force || o.Status != OrderStatusRefundRequested {
+			return nil, nil, infraerrors.Conflict("REFUND_INELIGIBLE", "only the full requested order is refundable")
+		}
+		return &RefundPlan{OrderID: oid, Order: o, RefundAmount: amt, Reason: reason}, nil, nil
 	}
 	// REFUND_PENDING 只能通过 QueryAndFinalizeRefund 收敛：重新发起会重复扣减并向网关重复退款。
 	ok := []string{OrderStatusCompleted, OrderStatusRefundRequested, OrderStatusRefundFailed}
@@ -305,6 +317,9 @@ func (s *PaymentService) invalidateRefundBalanceCache(ctx context.Context, userI
 }
 
 func (s *PaymentService) ExecuteRefund(ctx context.Context, p *RefundPlan) (*RefundResult, error) {
+	if p.Order.OrderType == TextVoucherOrder {
+		return s.sendTextRefund(ctx, p.Order)
+	}
 	c, err := s.entClient.PaymentOrder.Update().Where(paymentorder.IDEQ(p.OrderID), paymentorder.StatusIn(OrderStatusCompleted, OrderStatusRefundRequested, OrderStatusRefundFailed)).SetStatus(OrderStatusRefunding).Save(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("lock: %w", err)
@@ -432,6 +447,9 @@ func (s *PaymentService) QueryAndFinalizeRefund(ctx context.Context, oid int64) 
 	o, err := s.entClient.PaymentOrder.Get(ctx, oid)
 	if err != nil {
 		return nil, infraerrors.NotFound("NOT_FOUND", "order not found")
+	}
+	if o.OrderType == TextVoucherOrder {
+		return s.queryTextRefund(ctx, o)
 	}
 	if o.Status != OrderStatusRefundPending {
 		return nil, infraerrors.BadRequest("INVALID_STATUS", "only refund pending orders can be finalized")
