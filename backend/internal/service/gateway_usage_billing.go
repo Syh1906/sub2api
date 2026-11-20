@@ -250,6 +250,7 @@ func isForcedUsageBillingRequestID(requestID string) bool {
 	return strings.HasPrefix(id, "native_protocol:") ||
 		strings.HasPrefix(id, "web_search:") ||
 		strings.HasPrefix(id, "grok-video:") ||
+		strings.HasPrefix(id, "standard-video:") ||
 		strings.HasPrefix(id, "grok_audio:") ||
 		strings.HasPrefix(id, "grok_realtime:") ||
 		strings.HasPrefix(id, GeminiCachedContentUsageRequestIDPrefix)

@@ -89,6 +89,19 @@ func RegisterGatewayRoutes(
 			})
 		}
 	}
+	standardVideo := func(endpoint service.GrokMediaEndpoint, fallback gin.HandlerFunc) gin.HandlerFunc {
+		return func(c *gin.Context) {
+			if key, ok := middleware.GetAPIKeyFromContext(c); ok && key.Group != nil && key.Group.Platform == service.PlatformOpenAI {
+				h.OpenAIGateway.StandardVideo(c, endpoint)
+				return
+			}
+			if fallback != nil {
+				fallback(c)
+				return
+			}
+			c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": "Video deletion is not supported for this platform"}})
+		}
+	}
 	videoGenerationHandler := func(c *gin.Context) {
 		// Video status/content lookups below already allow Composite groups; keep
 		// task creation aligned so composite keys that route to Grok accounts can
@@ -271,8 +284,9 @@ func RegisterGatewayRoutes(
 		gateway.DELETE("/images/batches/:id/outputs", h.BatchImage.DeleteOutputs)
 		// OpenAI-compatible clients may create through /videos; xAI receives the
 		// canonical /videos/generations route inside the Grok media forwarder.
-		gateway.POST("/videos", videoGenerationHandler)
+		gateway.POST("/videos", standardVideo(service.StandardVideoCreate, videoGenerationHandler))
 		gateway.POST("/videos/generations", videoGenerationHandler)
+		gateway.DELETE("/videos/:request_id", standardVideo(service.StandardVideoDelete, nil))
 		gateway.POST("/videos/edits", videoEditHandler)
 		gateway.POST("/videos/extensions", videoExtensionHandler)
 		gateway.GET("/videos/generations/:request_id/content", videoContentHandler)
@@ -281,8 +295,8 @@ func RegisterGatewayRoutes(
 		gateway.GET("/videos/generations/:request_id", videoStatusHandler)
 		gateway.GET("/videos/edits/:request_id", videoStatusHandler)
 		gateway.GET("/videos/extensions/:request_id", videoStatusHandler)
-		gateway.GET("/videos/:request_id", videoStatusHandler)
-		gateway.GET("/videos/:request_id/content", videoContentHandler)
+		gateway.GET("/videos/:request_id", standardVideo(service.StandardVideoStatus, videoStatusHandler))
+		gateway.GET("/videos/:request_id/content", standardVideo(service.StandardVideoContent, videoContentHandler))
 
 		// xAI Voice APIs (Grok platform only): HTTP TTS/STT + Realtime WS.
 		// Not part of the creation-center product surface — gateway relay only.
@@ -432,8 +446,9 @@ func RegisterGatewayRoutes(
 	rootRoute(http.MethodPost, "/images/generations/async", bodyLimit, h.AsyncImage.Submit)
 	rootRoute(http.MethodPost, "/images/edits/async", bodyLimit, h.AsyncImage.Submit)
 	rootRoute(http.MethodGet, "/images/tasks/:task_id", bodyLimit, h.AsyncImage.Get)
-	rootRoute(http.MethodPost, "/videos", bodyLimit, videoGenerationHandler)
+	rootRoute(http.MethodPost, "/videos", bodyLimit, standardVideo(service.StandardVideoCreate, videoGenerationHandler))
 	rootRoute(http.MethodPost, "/videos/generations", bodyLimit, videoGenerationHandler)
+	rootRoute(http.MethodDelete, "/videos/:request_id", bodyLimit, standardVideo(service.StandardVideoDelete, nil))
 	rootRoute(http.MethodPost, "/videos/edits", bodyLimit, videoEditHandler)
 	rootRoute(http.MethodPost, "/videos/extensions", bodyLimit, videoExtensionHandler)
 	rootRoute(http.MethodGet, "/videos/generations/:request_id/content", bodyLimit, videoContentHandler)
@@ -442,8 +457,8 @@ func RegisterGatewayRoutes(
 	rootRoute(http.MethodGet, "/videos/generations/:request_id", bodyLimit, videoStatusHandler)
 	rootRoute(http.MethodGet, "/videos/edits/:request_id", bodyLimit, videoStatusHandler)
 	rootRoute(http.MethodGet, "/videos/extensions/:request_id", bodyLimit, videoStatusHandler)
-	rootRoute(http.MethodGet, "/videos/:request_id", bodyLimit, videoStatusHandler)
-	rootRoute(http.MethodGet, "/videos/:request_id/content", bodyLimit, videoContentHandler)
+	rootRoute(http.MethodGet, "/videos/:request_id", bodyLimit, standardVideo(service.StandardVideoStatus, videoStatusHandler))
+	rootRoute(http.MethodGet, "/videos/:request_id/content", bodyLimit, standardVideo(service.StandardVideoContent, videoContentHandler))
 
 	rootVoiceHandler := func(endpoint string) gin.HandlerFunc {
 		return func(c *gin.Context) {

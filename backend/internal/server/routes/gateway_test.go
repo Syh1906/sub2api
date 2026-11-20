@@ -338,7 +338,7 @@ func TestGatewayRoutesCompositeChatCompletionsWithGrokModelUsesOpenAIGateway(t *
 	}
 }
 
-func TestGatewayRoutesNonGrokVideosAreRejectedAtPlatformGate(t *testing.T) {
+func TestGatewayRoutesOpenAIVideoDispatch(t *testing.T) {
 	router := newGatewayRoutesTestRouter(service.PlatformOpenAI)
 
 	for _, tc := range []struct {
@@ -354,6 +354,8 @@ func TestGatewayRoutesNonGrokVideosAreRejectedAtPlatformGate(t *testing.T) {
 		{http.MethodPost, "/videos/edits", `{"model":"grok-imagine-video","prompt":"waves","video":{"url":"https://example.com/in.mp4"}}`},
 		{http.MethodPost, "/v1/videos/extensions", `{"model":"grok-imagine-video","prompt":"waves","video":{"url":"https://example.com/in.mp4"}}`},
 		{http.MethodPost, "/videos/extensions", `{"model":"grok-imagine-video","prompt":"waves","video":{"url":"https://example.com/in.mp4"}}`},
+		{http.MethodDelete, "/v1/videos/request-123", ""},
+		{http.MethodDelete, "/videos/request-123", ""},
 		{http.MethodGet, "/v1/videos/request-123", ""},
 		{http.MethodGet, "/videos/request-123", ""},
 		{http.MethodGet, "/v1/videos/generations/request-123", ""},
@@ -376,6 +378,14 @@ func TestGatewayRoutesNonGrokVideosAreRejectedAtPlatformGate(t *testing.T) {
 		w := httptest.NewRecorder()
 
 		router.ServeHTTP(w, req)
+		switch strings.TrimPrefix(tc.path, "/v1") {
+		case "/videos", "/videos/request-123", "/videos/request-123/content":
+			// The fixture sets a group key but no authenticated user. Reaching the
+			// task handler must preserve that authentication check.
+			require.Equal(t, http.StatusInternalServerError, w.Code, tc.path)
+			require.Contains(t, w.Body.String(), "User context not found")
+			continue
+		}
 		require.Equal(t, http.StatusNotFound, w.Code, "method=%s path=%s", tc.method, tc.path)
 		require.Contains(t, w.Body.String(), "Videos API is not supported for this platform")
 	}
