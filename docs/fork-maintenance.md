@@ -19,6 +19,10 @@
 
 ## 自有功能与修复
 
+### Gemini 显式缓存创建费用结算（v0.2.22-fork.11）
+
+创建显式缓存时，上游返回实际 token 数之后，服务会结算本次输入费和所选有效期的存储费。旧版本在从预估金额切换到实际金额时过早释放数据库中的在途使用记录，可能出现创建成功、费用流水实扣为零。修复后，金额预留按实际报价替换，在途记录保留至计费任务完成。若余额不足以保存缓存，既有清理流程仍只结算已发生的输入费。回归覆盖正常创建和余额不足两种情况，无需数据库迁移。[创建计费回归](../backend/internal/handler/gemini_cached_contents_billing_test.go)
+
 ### Gemini 兼容渠道的单模型详情（v0.2.22-fork.10）
 
 普通 Gemini 入口支持使用模型目录返回的完整名称读取详情，例如 `GET /v1beta/models/publisher/model-a`。分组白名单可以填写目录中的完整名称，也可以省略开头的 `models/`。合成路由使用包含发布者前缀的模型名，转发前逐段校验路径。读取自定义 Gemini 兼容渠道时，上游返回的 404 会传给客户端，即使请求的名字也在内置模型表中。本机已用可见范围不同的两个客户分组验证目录、详情、拒绝响应和用量。此项无需数据库迁移。[详情路由回归](../backend/internal/server/routes/gateway_test.go) · [兼容渠道响应回归](../backend/internal/handler/gemini_v1beta_handler_test.go)

@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -260,14 +261,33 @@ func (u *cachedBillingUpstream) methodCalls(method string) int {
 
 type cachedBillingUserRepo struct {
 	service.UserRepository
-	balance float64
+	balance               float64
+	activeAdmissions      atomic.Int32
+	admissionsAtDeduction atomic.Int32
+}
+
+func (r *cachedBillingUserRepo) AdmitTextUsage(context.Context, int64, string, float64, time.Duration) error {
+	r.activeAdmissions.Add(1)
+	return nil
+}
+
+func (r *cachedBillingUserRepo) RenewTextUsage(context.Context, string, time.Duration) (bool, error) {
+	return r.activeAdmissions.Load() > 0, nil
+}
+
+func (r *cachedBillingUserRepo) ReleaseTextUsage(context.Context, string) error {
+	r.activeAdmissions.Add(-1)
+	return nil
 }
 
 func (r *cachedBillingUserRepo) GetByID(_ context.Context, id int64) (*service.User, error) {
 	return &service.User{ID: id, Balance: r.balance}, nil
 }
 
-func (r *cachedBillingUserRepo) DeductBalance(context.Context, int64, float64) error { return nil }
+func (r *cachedBillingUserRepo) DeductBalance(context.Context, int64, float64) error {
+	r.admissionsAtDeduction.Store(r.activeAdmissions.Load())
+	return nil
+}
 
 type cachedBillingUsageRepo struct {
 	service.UsageLogRepository
@@ -299,6 +319,7 @@ func (r *cachedBillingUsageRepo) totals() []float64 {
 }
 
 type cachedBillingEnv struct {
+	users    *cachedBillingUserRepo
 	h        *GatewayHandler
 	repo     *cachedBillingRepo
 	upstream *cachedBillingUpstream
@@ -355,7 +376,7 @@ func newCachedBillingEnv(t *testing.T, balance float64, accountIDs ...int64) *ca
 	}
 	apiKey := &service.APIKey{ID: 7, UserID: 3, GroupID: &groupID, Group: group, Status: service.StatusActive,
 		User: &service.User{ID: 3, Concurrency: 10, Balance: balance}}
-	return &cachedBillingEnv{h: h, repo: repo, upstream: upstream, usage: usage, apiKey: apiKey, group: group, accounts: accounts}
+	return &cachedBillingEnv{h: h, repo: repo, upstream: upstream, usage: usage, users: userRepo, apiKey: apiKey, group: group, accounts: accounts}
 }
 
 // TestGeminiExplicitCacheExclusions_FiltersUnsupportedAccountsFromSnapshot 候选过滤直接按快照里的凭据判定：
@@ -450,6 +471,8 @@ func TestGeminiCachedContentsCreate_ChargesInputAndStorage(t *testing.T) {
 	totals := env.waitForUsage(t, 1)
 	require.Len(t, totals, 1)
 	require.InDelta(t, cachedBillingTokens*cachedBillingInputPrice+cachedBillingTokens*cachedBillingStoragePrice*24, totals[0], 1e-9)
+	require.EqualValues(t, 1, env.users.admissionsAtDeduction.Load(), "creation charge must settle before admission is released")
+	require.Zero(t, env.users.activeAdmissions.Load())
 	require.Len(t, env.repo.records, 1)
 	for _, record := range env.repo.records {
 		require.False(t, record.ExpireTime.After(time.Now().Add(24*time.Hour)), "本地到期时间不超过请求的有效期")
@@ -469,6 +492,8 @@ func TestGeminiCachedContentsCreate_UnaffordableStorageDeletesUpstreamAndBillsIn
 	totals := env.waitForUsage(t, 1)
 	require.Len(t, totals, 1)
 	require.InDelta(t, cachedBillingTokens*cachedBillingInputPrice, totals[0], 1e-9, "只收已发生的缓存 token 输入费")
+	require.EqualValues(t, 1, env.users.admissionsAtDeduction.Load())
+	require.Zero(t, env.users.activeAdmissions.Load())
 }
 
 func TestGeminiCachedContentsCreate_UnusableUpstreamResponseCleansUpWithoutRetry(t *testing.T) {

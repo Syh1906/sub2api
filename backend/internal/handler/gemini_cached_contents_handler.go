@@ -279,7 +279,9 @@ func (h *GatewayHandler) GeminiCachedContentsCreate(c *gin.Context) {
 			},
 			APIKey: apiKey, User: apiKey.User, Subscription: subscription, PricingAt: pricingAt, ChannelUsageFields: usageFields,
 		})
-		inflightRelease()
+		// Replace only the estimated balance hold. The usage task still needs the
+		// database admission to settle the exact charge or the input-only charge.
+		service.InflightReservationFromContext(c.Request.Context()).HandlerDone()
 		chargeDone, err := h.reserveGeminiCachedContentCharge(c, apiKey, subscription, amount)
 		if err != nil {
 			reqLog.Info("gemini.cached_content.storage_charge_rejected", zap.Float64("amount", amount), zap.Error(err))
