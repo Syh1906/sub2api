@@ -57,7 +57,7 @@ func (s *PaymentService) ContinueTextCheckout(ctx context.Context, id, userID in
 
 func (s *PaymentService) startTextCheckout(ctx context.Context, o *dbent.PaymentOrder) (*CreateOrderResponse, error) {
 	if TextCheckoutState(o) != "ready" || !o.ExpiresAt.After(time.Now()) {
-		return s.checkoutForOrder(o)
+		return s.checkoutForOrder(ctx, o)
 	}
 	c := s.creemClient()
 	product, _ := o.ProviderSnapshot["product"].(string)

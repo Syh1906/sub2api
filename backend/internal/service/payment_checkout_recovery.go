@@ -14,6 +14,7 @@ import (
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
+	"github.com/Wei-Shaw/sub2api/internal/payment"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
@@ -51,7 +52,7 @@ func (s *PaymentService) findPurchase(ctx context.Context, req CreateOrderReques
 	if TextCheckoutState(order) == "ready" {
 		return s.startTextCheckout(ctx, order)
 	}
-	return s.checkoutForOrder(order)
+	return s.checkoutForOrder(ctx, order)
 }
 
 func (s *PaymentService) LookupPurchase(ctx context.Context, userID int64, rawKey string) (*CreateOrderResponse, error) {
@@ -69,7 +70,7 @@ func (s *PaymentService) LookupPurchase(ctx context.Context, userID int64, rawKe
 	if err != nil {
 		return nil, err
 	}
-	return s.checkoutForOrder(order)
+	return s.checkoutForOrder(ctx, order)
 }
 
 // ResumeCheckout 只读取本人的现有订单，不向支付商重新创建交易。
@@ -78,10 +79,10 @@ func (s *PaymentService) ResumeCheckout(ctx context.Context, id, userID int64) (
 	if err != nil {
 		return nil, err
 	}
-	return s.checkoutForOrder(order)
+	return s.checkoutForOrder(ctx, order)
 }
 
-func (s *PaymentService) checkoutForOrder(order *dbent.PaymentOrder) (*CreateOrderResponse, error) {
+func (s *PaymentService) checkoutForOrder(ctx context.Context, order *dbent.PaymentOrder) (*CreateOrderResponse, error) {
 	result := &CreateOrderResponse{
 		CheckoutState: TextCheckoutState(order), OrderID: order.ID, OutTradeNo: order.OutTradeNo,
 		Amount: order.Amount, PayAmount: order.PayAmount,
@@ -122,7 +123,7 @@ func (s *PaymentService) checkoutForOrder(order *dbent.PaymentOrder) (*CreateOrd
 			if saved.OrderID != order.ID {
 				return nil, fmt.Errorf("checkout order mismatch")
 			}
-			return &saved, nil
+			return s.withOrderStripeKey(ctx, order, &saved)
 		}
 		return nil, infraerrors.Conflict("CHECKOUT_UNAVAILABLE", "checkout session cannot be restored")
 	}
@@ -131,6 +132,26 @@ func (s *PaymentService) checkoutForOrder(order *dbent.PaymentOrder) (*CreateOrd
 	}
 	if order.QrCode != nil {
 		result.QRCode = *order.QrCode
+	}
+	return s.withOrderStripeKey(ctx, order, result)
+}
+
+// 旧版收银会话没有公钥；只查询原单记录的实例，不按当前启用顺序重新选商户。
+// 未保存客户端参数时也可向原设备返回公钥，与该设备持有的原付款意图配对。
+func (s *PaymentService) withOrderStripeKey(ctx context.Context, order *dbent.PaymentOrder, result *CreateOrderResponse) (*CreateOrderResponse, error) {
+	if result.StripePublishableKey != "" || order.PaymentTradeNo == "" || expectedNotificationProviderKeyForOrder(nil, order, "") != payment.TypeStripe {
+		return result, nil
+	}
+	instance, err := s.getPinnedOrderProviderInstance(ctx, order)
+	if err != nil {
+		return nil, err
+	}
+	if instance != nil && instance.ProviderKey == payment.TypeStripe {
+		cfg, err := s.configService.decryptConfig(instance.Config)
+		if err != nil {
+			return nil, err
+		}
+		result.StripePublishableKey = cfg[payment.ConfigKeyPublishableKey]
 	}
 	return result, nil
 }

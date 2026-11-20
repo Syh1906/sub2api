@@ -50,10 +50,8 @@ func (s *PaymentService) getOrderProviderInstance(ctx context.Context, o *dbent.
 	return s.entClient.PaymentProviderInstance.Get(ctx, instID)
 }
 
-// getRefundOrderProviderInstance resolves the provider instance for refund paths.
-// Refunds must be pinned to an explicit historical binding, so legacy
-// "best-effort" provider guessing is intentionally not allowed here.
-func (s *PaymentService) getRefundOrderProviderInstance(ctx context.Context, o *dbent.PaymentOrder) (*dbent.PaymentProviderInstance, error) {
+// 收银恢复与退款只能使用原单明确记录的实例。
+func (s *PaymentService) getPinnedOrderProviderInstance(ctx context.Context, o *dbent.PaymentOrder) (*dbent.PaymentProviderInstance, error) {
 	if s == nil || s.entClient == nil || o == nil {
 		return nil, nil
 	}
@@ -69,12 +67,12 @@ func (s *PaymentService) getRefundOrderProviderInstance(ctx context.Context, o *
 
 	instID, err := strconv.ParseInt(instIDStr, 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("order %d refund provider instance id is invalid: %s", o.ID, instIDStr)
+		return nil, fmt.Errorf("order %d provider instance id is invalid: %s", o.ID, instIDStr)
 	}
 	inst, err := s.entClient.PaymentProviderInstance.Get(ctx, instID)
 	if err != nil {
 		if dbent.IsNotFound(err) {
-			return nil, fmt.Errorf("order %d refund provider instance %s is missing", o.ID, instIDStr)
+			return nil, fmt.Errorf("order %d provider instance %s is missing", o.ID, instIDStr)
 		}
 		return nil, err
 	}
@@ -201,7 +199,7 @@ func (s *PaymentService) validateRefundRequest(ctx context.Context, oid, uid int
 		return nil, infraerrors.BadRequest("INVALID_STATUS", "only completed orders can request refund")
 	}
 	// Check provider instance allows user refund
-	inst, err := s.getRefundOrderProviderInstance(ctx, o)
+	inst, err := s.getPinnedOrderProviderInstance(ctx, o)
 	if err != nil || inst == nil {
 		return nil, infraerrors.Forbidden("USER_REFUND_DISABLED", "refund is not available for this order")
 	}
@@ -228,7 +226,7 @@ func (s *PaymentService) PrepareRefund(ctx context.Context, oid int64, amt float
 		return nil, nil, infraerrors.BadRequest("INVALID_STATUS", "order status does not allow refund")
 	}
 	// Check provider instance allows admin refund
-	inst, instErr := s.getRefundOrderProviderInstance(ctx, o)
+	inst, instErr := s.getPinnedOrderProviderInstance(ctx, o)
 	if instErr != nil {
 		slog.Warn("refund: provider instance lookup failed", "orderID", oid, "error", instErr)
 		return nil, nil, infraerrors.InternalServer("PROVIDER_LOOKUP_FAILED", "failed to look up payment provider for this order")
@@ -758,7 +756,7 @@ func (s *PaymentService) latestRefundPendingDetail(ctx context.Context, oid int6
 // getRefundProvider creates a provider using the order's original instance config.
 // Delegates to getOrderProvider which handles instance lookup and fallback.
 func (s *PaymentService) getRefundProvider(ctx context.Context, o *dbent.PaymentOrder) (payment.Provider, error) {
-	inst, err := s.getRefundOrderProviderInstance(ctx, o)
+	inst, err := s.getPinnedOrderProviderInstance(ctx, o)
 	if err != nil {
 		return nil, err
 	}

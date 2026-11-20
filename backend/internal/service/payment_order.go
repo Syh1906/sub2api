@@ -493,6 +493,9 @@ func (s *PaymentService) invokeProvider(ctx context.Context, order *dbent.Paymen
 		resultType = payment.CreatePaymentResultOrderCreated
 	}
 	resp := buildCreateOrderResponse(order, req, payAmount, sel, pr, resultType)
+	if sel.ProviderKey == payment.TypeStripe {
+		resp.StripePublishableKey = sel.Config[payment.ConfigKeyPublishableKey]
+	}
 	resp.ResumeToken = resumeToken
 	resp.AlipayMobilePrecreateDeepLink = providerReq.AlipayMobilePrecreate && strings.TrimSpace(pr.QRCode) != ""
 	update := s.entClient.PaymentOrder.UpdateOneID(order.ID).
