@@ -18,7 +18,6 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	"github.com/Wei-Shaw/sub2api/internal/repository"
 	"github.com/Wei-Shaw/sub2api/internal/service"
-
 	"github.com/stretchr/testify/require"
 	stripe "github.com/stripe/stripe-go/v85"
 	"github.com/stripe/stripe-go/v85/webhook"
@@ -58,7 +57,7 @@ func TestPaymentPrecisionPostgres(t *testing.T) {
 		refundMinor           string
 	}{
 		{"direct", "0", 12.345, 12.35, 12.35, "12345"},
-		{"with_fee", "2.875", 12, 12, 6, "6173"},
+		{"with_fee", "2.87", 12, 12, 6, "6173"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			require.NoError(t, settings.Set(ctx, service.SettingRechargeFeeRate, tc.rate))

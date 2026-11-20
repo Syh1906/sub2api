@@ -82,3 +82,22 @@ func paymentStatsTestOrder(userID int64, email, currency string, amount float64,
 		ProviderSnapshot: map[string]any{"currency": currency},
 	}
 }
+
+func TestPaymentStatsThreeDecimalCurrency(t *testing.T) {
+	t.Parallel()
+	day := time.Date(2026, 7, 25, 0, 0, 0, 0, time.UTC)
+	orders := []*dbent.PaymentOrder{
+		paymentStatsTestOrder(1, "buyer@example.invalid", "KWD", 12.345, &day),
+		paymentStatsTestOrder(2, "other@example.invalid", "KWD", 12.344, &day),
+	}
+	stats := &DashboardStats{}
+	computeBasicStats(stats, orders, day)
+	require.Equal(t, 24.689, stats.TotalAmount["KWD"])
+	require.Equal(t, 24.689, stats.TodayAmount["KWD"])
+	require.Equal(t, 12.345, stats.AvgAmount["KWD"])
+	require.Equal(t, 24.689, buildDailySeries(orders, day.AddDate(0, 0, -1), 1)[0].Amount["KWD"])
+	require.Equal(t, 24.689, buildMethodDistribution(orders)[0].Amount["KWD"])
+	top := buildTopUsers(orders)["KWD"]
+	require.Equal(t, 12.345, top[0].Amount)
+	require.Equal(t, 12.344, top[1].Amount)
+}

@@ -19,11 +19,13 @@
 
 ## 自有功能与修复
 
-### 三位小数支付币种的实付金额（v0.2.22-fork.7）
+### 三位小数支付币种的实付金额（v0.2.22-fork.7 起）
 
 [迁移 258](../backend/migrations/258_payment_order_pay_amount_precision.sql) 将订单实付列从两位小数扩至三位，保留原有 18 位整数范围。升级会保留历史订单已存金额，早期舍入的第三位无法从数据库还原。订单积分面额和退款扣回的积分继续按现有账务精度记录，渠道退款按原单实付和支付币种换算。
 
 [PostgreSQL 集成用例](../backend/internal/payment/integration/payment_precision_postgres_test.go) 覆盖直接支付 KWD 12.345，以及本金 KWD 12.000 加手续费 KWD 0.345。两笔订单均核对渠道请求、数据库回读、恢复原付款意图、签名通知、重放及错误金额。全额退款退回 KWD 12.345，第二笔扣回半数积分时退回 KWD 6.173。测试使用本地模拟 Stripe。
+
+v0.2.22-fork.8 同步修正运营支付统计。总额、当日金额、均价、按天和按方式汇总、客户排行均按支付币种的小数位数返回。两笔 KWD 12.345 和 12.344 的合计为 24.689，均价为 12.345。[统计回归用例](../backend/internal/service/payment_stats_test.go)
 
 ### 原单恢复、在途消费与退款核对（v0.2.22-fork.6）
 

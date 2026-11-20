@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
-	"math"
 	"sort"
 	"strconv"
 	"time"
@@ -12,6 +11,8 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
+	"github.com/Wei-Shaw/sub2api/internal/payment"
+	"github.com/shopspring/decimal"
 )
 
 // --- Dashboard & Analytics ---
@@ -70,10 +71,12 @@ func computeBasicStats(st *DashboardStats, orders []*dbent.PaymentOrder, todaySt
 	}
 	st.TotalCount = len(orders)
 	st.TodayCount = todayCount
-	for currency, totalAmount := range st.TotalAmount {
-		st.AvgAmount[currency] = roundAmount(totalAmount / float64(currencyCounts[currency]))
-	}
 	roundCurrencyAmounts(st.TotalAmount)
+	for currency, totalAmount := range st.TotalAmount {
+		count := decimal.NewFromInt(int64(currencyCounts[currency]))
+		digits := int32(payment.CurrencyMaxFractionDigits(currency))
+		st.AvgAmount[currency] = decimal.NewFromFloat(totalAmount).DivRound(count, digits).InexactFloat64()
+	}
 	roundCurrencyAmounts(st.TodayAmount)
 }
 
@@ -147,7 +150,7 @@ func buildTopUsers(orders []*dbent.PaymentOrder) TopUsersByCurrency {
 	for currency, users := range userMap {
 		userList := make([]*TopUserStat, 0, len(users))
 		for _, us := range users {
-			us.Amount = roundAmount(us.Amount)
+			us.Amount = roundAmount(us.Amount, currency)
 			userList = append(userList, us)
 		}
 		sort.Slice(userList, func(i, j int) bool {
@@ -167,12 +170,12 @@ func buildTopUsers(orders []*dbent.PaymentOrder) TopUsersByCurrency {
 
 func roundCurrencyAmounts(amounts CurrencyAmounts) {
 	for currency, amount := range amounts {
-		amounts[currency] = roundAmount(amount)
+		amounts[currency] = roundAmount(amount, currency)
 	}
 }
 
-func roundAmount(amount float64) float64 {
-	return math.Round(amount*100) / 100
+func roundAmount(amount float64, currency string) float64 {
+	return decimal.NewFromFloat(amount).Round(int32(payment.CurrencyMaxFractionDigits(currency))).InexactFloat64()
 }
 
 // --- Audit Logs ---
