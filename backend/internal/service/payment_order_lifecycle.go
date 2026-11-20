@@ -122,14 +122,47 @@ func (s *PaymentService) AdminCancelOrder(ctx context.Context, orderID int64) (s
 }
 
 func (s *PaymentService) cancelCore(ctx context.Context, o *dbent.PaymentOrder, fs, op, ad string) (string, error) {
+	state := TextCheckoutState(o)
+	if state == "needs_review" || state == "waiting_payment" {
+		return "", infraerrors.Conflict("CHECKOUT_UNCONFIRMED", "merchant confirmation is pending")
+	}
+	if o.OrderType == TextVoucherOrder && o.PaymentTradeNo != "" {
+		remote, err := s.readOriginalTextCheckout(ctx, o, o.PaymentTradeNo)
+		if err != nil {
+			return "", err
+		}
+		switch remote.Status {
+		case "processing", "completed":
+			o.ProviderSnapshot["checkout_phase"] = "waiting_payment"
+			_, err := s.entClient.PaymentOrder.Update().Where(paymentorder.ID(o.ID), paymentorder.StatusEQ(OrderStatusPending), paymentorder.UpdatedAtEQ(o.UpdatedAt)).
+				SetProviderSnapshot(o.ProviderSnapshot).ClearPayURL().Save(ctx)
+			if err != nil {
+				return "", err
+			}
+			return "", infraerrors.Conflict("CHECKOUT_UNCONFIRMED", "payment is awaiting merchant confirmation")
+		case "pending", "expired":
+			// A pending hosted link may still accept payment after a *local* cancellation.
+			// A subsequent verified callback therefore still fulfills this original order.
+		default:
+			return "", infraerrors.Conflict("CHECKOUT_UNCONFIRMED", "merchant checkout status is unknown")
+		}
+	}
 	if o.OrderType != TextVoucherOrder && (o.PaymentTradeNo != "" || o.PaymentType != "") {
 		if s.checkPaid(ctx, o) == checkPaidResultAlreadyPaid {
 			return checkPaidResultAlreadyPaid, nil
 		}
 	}
-	c, err := s.entClient.PaymentOrder.Update().Where(paymentorder.IDEQ(o.ID), paymentorder.StatusEQ(OrderStatusPending)).SetStatus(fs).Save(ctx)
+	update := s.entClient.PaymentOrder.Update().Where(paymentorder.IDEQ(o.ID), paymentorder.StatusEQ(OrderStatusPending))
+	if o.OrderType == TextVoucherOrder {
+		// Do not cancel a ready order if a concurrent dispatch already claimed it.
+		update.Where(paymentorder.UpdatedAtEQ(o.UpdatedAt))
+	}
+	c, err := update.SetStatus(fs).Save(ctx)
 	if err != nil {
 		return "", fmt.Errorf("update order status: %w", err)
+	}
+	if c == 0 && o.OrderType == TextVoucherOrder {
+		return "", infraerrors.Conflict("CHECKOUT_CHANGED", "refresh the order")
 	}
 	if c > 0 {
 		auditAction := "ORDER_CANCELLED"

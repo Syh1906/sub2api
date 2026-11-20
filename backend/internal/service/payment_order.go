@@ -195,7 +195,7 @@ func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderReq
 	}
 	providerSnapshot := buildPaymentOrderProviderSnapshot(sel, req)
 	if req.OrderType == TextVoucherOrder {
-		providerSnapshot = map[string]any{"schema_version": 2, "provider_key": "creem", "currency": "USD", "product": sel.Config["product"], "mode": sel.Config["mode"]}
+		providerSnapshot = map[string]any{"schema_version": 2, "provider_key": "creem", "currency": "USD", "product": sel.Config["product"], "mode": sel.Config["mode"], "return_url": sel.Config["return_url"], "checkout_phase": "ready"}
 	}
 	selectedInstanceID := ""
 	selectedProviderKey := ""

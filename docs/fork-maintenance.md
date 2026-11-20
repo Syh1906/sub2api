@@ -19,6 +19,16 @@
 
 ## 自有功能与修复
 
+### 原单恢复、在途消费与退款核对（v0.2.22-fork.6）
+
+登录客户可在本人待付原单继续尚未发送的收银请求。服务在发往 Creem 前保存发送状态，收到链接后保存商户收银台编号。回执中断时，运营凭商户编号查询原收银台，核对购买标识、商品与数量后恢复链接；若商户确认未创建，可登记凭证关闭原单。已发送而结果未知的旧单也使用这一路径。Creem 回跳用 `local_order_id` 携带本站编号；付款交付仍依赖验签通知。新购买的退款期从签名成交快照中的已付款订单更新时间起算。旧单可凭同笔通知将原履约时间校正到更早的付款时间。[原单恢复](../backend/internal/service/text_checkout.go)
+
+客户申请退回已兑换积分时，服务先核对本人是否仍有余额计费请求在途。迁移 256 让请求获准、异步结算与退款通过同一客户行排序。正常长请求会续期，失联登记仅在过期后由退款回收；已被回收的登记无法再扣款。未兑换的购买仍可单独退款。退款已批准但尚未派发时，运营可续办；明确拒绝时退回本单权益。商户交易仍显示已付款时，运营需取得本次退款最终失败或未受理的凭证，才能通过 `POST /api/v1/admin/payment/orders/:id/refund/resolve-failure` 登记并解冻。系统再次核对原交易、金额及申请时间，并记录操作人。[退款核对](../backend/internal/service/text_refund_reconciliation.go)
+
+客户与运营的订单列表提供兑换状态，只有购买者详情提供仍可领取的兑换码。运营可在 `GET /api/v1/admin/payment/orders/:id/usage` 分页读取请求编号、结算时间及该请求从本单扣除的积分。迁移 257 保留历史已用合计，将新的单条及批量结算逐请求分配；没有请求编号的余额调减另行累计。升级已有实例时应先停止旧版接收新请求，让在途计费完成，再切换所有处理退款和计费的进程。[订单明细](../backend/internal/service/text_purchase_detail.go) · [消费归属迁移](../backend/migrations/257_text_purchase_usage.sql)
+
+PostgreSQL 18 与模拟商户覆盖原单断点、通知延迟、退款拒绝和回执丢失、请求在途、跨单消费、防重及新旧数据。真实收退款需使用商户沙箱独立核验。[交易集成用例](../backend/internal/payment/integration/text_purchase_postgres_test.go)
+
 ### 单次购买、兑换交付与原单退款（v0.2.22-fork.5）
 
 支持通过 Creem 托管结账购买文字积分兑换码。后端环境使用 `CREEM_MODE`（`test` 或 `prod`）、`CREEM_API_KEY`、`CREEM_WEBHOOK_SECRET`，按金额分别配置 `CREEM_PRODUCT_10`、`CREEM_PRODUCT_20`、`CREEM_PRODUCT_50`、`CREEM_PRODUCT_100`。商品须为对应面额的美元一次性商品。支付总开关启用且该档配置齐全时，登录客户可通过 `GET /api/v1/payment/text-offers` 查看可售档位。创建走原支付订单接口，类型为 `text_voucher`，方式为 `creem`。商户通知入口为 `POST /api/v1/payment/webhook/creem`，需订阅 `checkout.completed` 和 `refund.created`。

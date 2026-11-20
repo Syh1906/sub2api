@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -65,31 +66,52 @@ func (s *PaymentService) TextOffers(ctx context.Context) ([]TextOffer, error) {
 	}
 	return offers, nil
 }
+
+// Only documented input, authentication and not-found errors prove rejection.
+// A timeout, a broken response body or an unexpected status can follow acceptance.
+type creemHTTPError struct{ status int }
+
+func (e creemHTTPError) Error() string { return fmt.Sprintf("creem returned HTTP %d", e.status) }
+func creemRequestRejected(err error) bool {
+	var e creemHTTPError
+	return errors.As(err, &e) && (e.status == http.StatusBadRequest || e.status == http.StatusUnauthorized || e.status == http.StatusNotFound)
+}
+
+type creemNotSent struct{ error }
+
+func (e creemNotSent) Unwrap() error { return e.error }
+func creemRequestNotSent(err error) bool {
+	var e creemNotSent
+	return errors.As(err, &e)
+}
 func (c *creemClient) call(ctx context.Context, method, path string, input, output any) error {
 	if c.base == "" || c.key == "" {
-		return fmt.Errorf("creem is not configured")
+		return creemNotSent{errors.New("creem is not configured")}
 	}
 	var body io.Reader
 	if input != nil {
 		encoded, err := json.Marshal(input)
 		if err != nil {
-			return err
+			return creemNotSent{err}
 		}
 		body = bytes.NewReader(encoded)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, c.base+path, body)
 	if err != nil {
-		return err
+		return creemNotSent{err}
 	}
 	req.Header.Set("x-api-key", c.key)
 	req.Header.Set("Content-Type", "application/json")
+	if err := ctx.Err(); err != nil {
+		return creemNotSent{err}
+	}
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("creem request did not complete: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("creem returned HTTP %d", resp.StatusCode)
+		return creemHTTPError{resp.StatusCode}
 	}
 	return json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(output)
 }
@@ -105,12 +127,16 @@ func (c *creemClient) checkout(ctx context.Context, product, trade, success stri
 	if err != nil {
 		return result, err
 	}
-	u, err := url.Parse(result.URL)
-	if result.ID == "" || err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil {
+	if result.ID == "" || !result.validURL() {
 		return result, fmt.Errorf("invalid hosted checkout response")
 	}
 	return result, nil
 }
+func (c creemCheckout) validURL() bool {
+	u, err := url.Parse(c.URL)
+	return err == nil && u.Scheme == "https" && u.Host != "" && u.User == nil
+}
+
 func (c *creemClient) validSignature(body []byte, signature string) bool {
 	if c.webhook == "" || c.base == "" {
 		return false

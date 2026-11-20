@@ -23,6 +23,7 @@ import (
 	entsql "entgo.io/ent/dialect/sql"
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	_ "github.com/Wei-Shaw/sub2api/ent/runtime"
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	"github.com/Wei-Shaw/sub2api/internal/repository"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -85,12 +86,15 @@ func TestTextPurchasePostgres(t *testing.T) {
 				return nil, fmt.Errorf("missing return URL")
 			}
 			target, err := url.Parse(success)
-			if err != nil || target.Query().Get("order_id") == "" {
+			if err != nil || target.Query().Get("local_order_id") == "" || target.Query().Has("order_id") {
 				return nil, fmt.Errorf("missing return order")
 			}
 			raw = map[string]string{"id": "ch_" + trade, "checkout_url": "https://checkout.example/" + trade}
 		case "/v1/refunds":
 			refunds.Add(1)
+			if merchantStatus == "unauthorized" {
+				return &http.Response{StatusCode: http.StatusUnauthorized, Body: io.NopCloser(strings.NewReader("")), Header: http.Header{}}, nil
+			}
 			if merchantStatus == "disconnected" {
 				return nil, io.ErrUnexpectedEOF
 			}
@@ -131,7 +135,11 @@ func TestTextPurchasePostgres(t *testing.T) {
 		require.Equal(t, start+1, creates.Load())
 		trade := res.OutTradeNo
 		prod := fmt.Sprintf("prod_%d", n)
-		order := map[string]any{"id": "ord_" + trade, "product": prod, "transaction": "tran_" + trade, "amount": n * 100, "sub_total": n * 100, "amount_due": n * 100, "amount_paid": n * 100, "currency": "USD", "status": "paid", "type": "onetime"}
+		paidTime := time.Now().UTC().Add(-time.Hour).Truncate(time.Microsecond)
+		if key == "expired" {
+			paidTime = time.Now().UTC().Add(-14*24*time.Hour - time.Second).Truncate(time.Microsecond)
+		}
+		order := map[string]any{"updated_at": paidTime, "id": "ord_" + trade, "product": prod, "transaction": "tran_" + trade, "amount": n * 100, "sub_total": n * 100, "amount_due": n * 100, "amount_paid": n * 100, "currency": "USD", "status": "paid", "type": "onetime"}
 		v := map[string]any{"request_id": trade, "id": "ch_" + trade, "units": 1, "status": "completed", "product": map[string]any{"id": prod, "billing_type": "onetime", "price": n * 100, "currency": "USD"}, "order": order}
 		require.Error(t, send("checkout.completed", v, false))
 		order["currency"] = "EUR"
@@ -143,9 +151,14 @@ func TestTextPurchasePostgres(t *testing.T) {
 		order["amount_paid"] = n*100 - 1
 		require.Error(t, send("checkout.completed", v, true))
 		order["amount_paid"] = n * 100
+		delete(order, "updated_at")
+		require.Error(t, send("checkout.completed", v, true))
+		order["updated_at"] = paidTime
 		require.NoError(t, send("checkout.completed", v, true))
 		require.NoError(t, send("checkout.completed", v, true))
 		o := ent.PaymentOrder.GetX(ctx, res.OrderID)
+		require.True(t, o.PaidAt.Equal(paidTime))
+		require.True(t, o.CompletedAt.After(*o.PaidAt))
 		d, err := svc.TextDetail(ctx, o, true)
 		require.NoError(t, err)
 		require.Len(t, d.Code, 32)
@@ -156,6 +169,13 @@ func TestTextPurchasePostgres(t *testing.T) {
 		require.Error(t, err)
 		return o, d.Code
 	}
+	// Start a balance-funded model request before the buyer has any redeemed purchase.
+	ent.User.UpdateOneID(u.ID).SetBalance(1).SaveX(ctx)
+	cache := service.NewBillingCacheService(nil, users, nil, nil, nil, nil, &config.Config{}, nil)
+	defer cache.Stop()
+	tracked, handlerDone, err := cache.AdmitTextUsage(ctx, u.ID)
+	require.NoError(t, err)
+	defer handlerDone()
 	a, ac := purchase(20, "one")
 	b, bc := purchase(10, "two")
 	_, err = redeem.Redeem(ctx, u.ID, ac)
@@ -164,20 +184,20 @@ func TestTextPurchasePostgres(t *testing.T) {
 	require.Error(t, err)
 	_, err = redeem.Redeem(ctx, u.ID, bc)
 	require.NoError(t, err)
+	// Simulate another billed request exhausting the initial ordinary balance.
+	_, err = db.Exec("UPDATE users SET balance=balance-1 WHERE id=$1", u.ID)
+	require.NoError(t, err)
 	require.Equal(t, 30.0, balance())
 	billing := repository.NewUsageBillingRepository(ent, db)
 	cmd := &service.UsageBillingCommand{RequestID: "text-usage-1", UserID: u.ID, APIKeyID: 1, Model: "text-fixture", InputTokens: 4, OutputTokens: 3, BalanceCost: 3}
-	_, err = billing.Apply(ctx, cmd)
-	require.NoError(t, err)
-	_, err = billing.Apply(ctx, cmd)
-	require.NoError(t, err)
+	verifyTextUsageAdmission(t, db, svc, billing, a, cmd, tracked, handlerDone)
 	require.Equal(t, 27.0, balance())
 	detail, err := svc.TextDetail(ctx, a, false)
 	require.NoError(t, err)
 	require.Equal(t, 3.0, detail.Spent)
 	require.Empty(t, detail.Code)
 	require.Error(t, svc.RequestRefund(ctx, a.ID, u.ID, "used"))
-	require.NoError(t, svc.RequestRefund(ctx, b.ID, u.ID, "unused"))
+	verifyExpiredTextUsage(t, db, svc, billing, b, cmd)
 	require.Equal(t, 17.0, balance())
 	refund := func(o *dbent.PaymentOrder) {
 		plan, _, err := svc.PrepareRefund(ctx, o.ID, o.Amount, "unused", false, true)
@@ -201,7 +221,6 @@ func TestTextPurchasePostgres(t *testing.T) {
 	_, err = redeem.Redeem(ctx, u.ID, cc)
 	require.Error(t, err)
 	d, _ := purchase(100, "expired")
-	ent.PaymentOrder.UpdateOneID(d.ID).SetPaidAt(time.Now().Add(-15 * 24 * time.Hour)).SaveX(ctx)
 	require.Error(t, svc.RequestRefund(ctx, d.ID, u.ID, "late"))
 	require.Equal(t, int32(2), refunds.Load())
 
@@ -248,4 +267,17 @@ func TestTextPurchasePostgres(t *testing.T) {
 	require.Equal(t, service.OrderStatusRefundRequested, ent.PaymentOrder.GetX(ctx, g.ID).Status)
 	require.Equal(t, 17.0, balance())
 	refund(g)
+
+	h, hc := purchase(10, "usage-detail")
+	summary, err := svc.TextVoucherSummaries(ctx, []*dbent.PaymentOrder{h})
+	require.NoError(t, err)
+	require.Empty(t, summary[h.ID].Code)
+	require.Nil(t, summary[h.ID].RedeemedAt)
+	_, err = redeem.Redeem(ctx, u.ID, hc)
+	require.NoError(t, err)
+	verifyOrderUsage(t, db, svc, billing, a, h, cmd)
+	t.Run("checkout recovery", func(t *testing.T) { verifyTextCheckoutRecovery(t, db, ent, svc, u.ID, other.ID) })
+	verifyRefundRecovery(t, ent, svc, redeem, purchase, &merchantStatus, &queryTransaction, &refunds)
+	operator := ent.User.Create().SetEmail("orders-admin@example.invalid").SetUsername("operator").SetRole("admin").SetPasswordHash("fixture").SaveX(ctx)
+	verifyOrderUsageHTTP(t, svc, users, u.ID, operator.ID, h.ID, hc)
 }

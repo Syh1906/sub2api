@@ -69,7 +69,7 @@ func (s *PaymentService) requestTextRefund(ctx context.Context, oid, uid int64, 
 	if o.Status == OrderStatusRefundRequested {
 		return nil
 	}
-	if (o.Status != OrderStatusCompleted && o.Status != OrderStatusRefundFailed) || o.PaidAt == nil || time.Now().After(o.PaidAt.Add(14*24*time.Hour)) {
+	if (o.Status != OrderStatusCompleted && o.Status != OrderStatusRefundFailed) || o.PaidAt == nil || textRefundExpired(*o.PaidAt, time.Now()) {
 		return infraerrors.Conflict("REFUND_INELIGIBLE", "order cannot be refunded")
 	}
 	lot, err := readRefundLot(ctx, tx.Client(), oid)
@@ -83,6 +83,9 @@ func (s *PaymentService) requestTextRefund(ctx context.Context, oid, uid int64, 
 		return err
 	}
 	if lot.redeemed.Valid {
+		if err := guardRedeemedRefund(ctx, tx, uid); err != nil {
+			return err
+		}
 		res, err := tx.ExecContext(ctx, "UPDATE users SET balance=balance-$1,updated_at=now() WHERE id=$2 AND balance >= $1", o.Amount, uid)
 		if err != nil {
 			return err
@@ -106,67 +109,123 @@ func (s *PaymentService) requestTextRefund(ctx context.Context, oid, uid int64, 
 	return err
 }
 
+// REFUNDING records approval before dispatch. A second operator may resume this
+// state. Once PENDING is committed, only the winner may contact the provider.
 func (s *PaymentService) sendTextRefund(ctx context.Context, o *dbent.PaymentOrder) (*RefundResult, error) {
+	if o.RefundRequestedAt == nil {
+		return nil, infraerrors.Conflict("INVALID_STATUS", "missing refund request")
+	}
+	attempt := paymentorder.RefundRequestedAtEQ(*o.RefundRequestedAt)
+	if o.Status == OrderStatusRefundRequested {
+		n, err := s.entClient.PaymentOrder.Update().Where(paymentorder.ID(o.ID), attempt, paymentorder.StatusEQ(OrderStatusRefundRequested)).SetStatus(OrderStatusRefunding).Save(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if n == 0 {
+			return nil, infraerrors.Conflict("INVALID_STATUS", "refund approval already handled")
+		}
+	}
 	lot, err := readRefundLot(ctx, s.entClient, o.ID)
 	if err != nil {
 		return nil, err
 	}
 	if !lot.held {
-		return nil, infraerrors.Conflict("REFUND_INELIGIBLE", "no refund request")
+		return nil, infraerrors.Conflict("REFUND_INELIGIBLE", "no refund hold")
 	}
-	client := s.creemClient()
-	if client.key == "" || client.base == "" || o.ProviderSnapshot["mode"] != client.mode {
-		return nil, infraerrors.ServiceUnavailable("CREEM_UNAVAILABLE", "refund provider not configured")
-	}
-	n, err := s.entClient.PaymentOrder.Update().Where(paymentorder.ID(o.ID), paymentorder.StatusEQ(OrderStatusRefundRequested)).SetStatus(OrderStatusRefundPending).Save(ctx)
+	n, err := s.entClient.PaymentOrder.Update().Where(paymentorder.ID(o.ID), attempt, paymentorder.StatusEQ(OrderStatusRefunding)).SetStatus(OrderStatusRefundPending).Save(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if n == 0 {
 		return nil, infraerrors.Conflict("INVALID_STATUS", "refund already submitted")
 	}
-	var result struct {
-		Status string `json:"status"`
-	}
-	err = client.call(ctx, "POST", "/v1/refunds", map[string]string{"transaction_id": lot.txID}, &result)
-	if err != nil {
-		return nil, err
-	} // Unknown outcome: keep the hold and query this same transaction.
-	switch result.Status {
-	case "succeeded":
-		return s.finishTextRefund(ctx, o, lot, true)
-	case "failed", "canceled":
-		return s.finishTextRefund(ctx, o, lot, false)
-	case "pending", "requiresAction":
+	status, callErr := s.dispatchTextRefund(ctx, o, lot)
+	// Once the merchant has responded, a disconnected operator must not prevent
+	// saving the terminal result and returning this hold exactly once.
+	settle, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	switch {
+	case creemRequestNotSent(callErr), creemRequestRejected(callErr):
+		return s.finishTextRefund(settle, o, false)
+	case callErr != nil:
+		return nil, callErr
+	case status == "failed", status == "canceled":
+		return s.finishTextRefund(settle, o, false)
+	case status == "succeeded":
+		return s.finishTextRefund(settle, o, true)
+	case status == "pending", status == "requiresAction":
 		return &RefundResult{Warning: "pending"}, nil
 	default:
 		return nil, fmt.Errorf("unknown refund status")
 	}
 }
 
-func (s *PaymentService) finishTextRefund(ctx context.Context, o *dbent.PaymentOrder, lot textRefundLot, success bool) (*RefundResult, error) {
+// Guard the single external call against an operator resolving a stranded
+// PENDING marker. Process death releases this order lock, never its durable marker.
+func (s *PaymentService) dispatchTextRefund(ctx context.Context, o *dbent.PaymentOrder, lot textRefundLot) (string, error) {
+	tx, err := s.entClient.Tx(ctx)
+	if err != nil {
+		return "", creemNotSent{err}
+	}
+	defer func() { _ = tx.Rollback() }()
+	_, err = tx.PaymentOrder.Query().Where(paymentorder.ID(o.ID), paymentorder.RefundRequestedAtEQ(*o.RefundRequestedAt), paymentorder.StatusEQ(OrderStatusRefundPending)).ForUpdate().Only(ctx)
+	if err != nil {
+		return "", creemNotSent{err}
+	}
+	c := s.creemClient()
+	if c.mode != o.ProviderSnapshot["mode"] {
+		return "", creemNotSent{fmt.Errorf("wrong store mode")}
+	}
+	var result struct {
+		Status string `json:"status"`
+	}
+	err = c.call(ctx, "POST", "/v1/refunds", map[string]string{"transaction_id": lot.txID}, &result)
+	return result.Status, err
+}
+
+func (s *PaymentService) finishTextRefund(ctx context.Context, o *dbent.PaymentOrder, success bool) (*RefundResult, error) {
 	tx, err := s.entClient.Tx(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if err = lockTextBuyer(ctx, tx, o.UserID); err != nil {
-		return nil, err
-	}
-	current, err := tx.PaymentOrder.Query().Where(paymentorder.ID(o.ID)).ForUpdate().Only(ctx)
+	current, err := lockTextRefundOrder(ctx, tx, o.UserID, o.ID)
 	if err != nil {
 		return nil, err
 	}
 	if current.Status == OrderStatusRefunded {
 		return &RefundResult{Success: true}, nil
 	}
-	if current.Status != OrderStatusRefundPending && current.Status != OrderStatusRefundRequested {
+	if current.Status == OrderStatusRefundFailed && !success {
+		return &RefundResult{Warning: "provider_rejected"}, nil
+	}
+	if current.Status != OrderStatusRefundRequested && current.Status != OrderStatusRefunding && current.Status != OrderStatusRefundPending {
 		return nil, infraerrors.Conflict("REFUND_RECONCILIATION_REQUIRED", "refund requires an original order hold")
+	}
+	if o.RefundRequestedAt == nil || current.RefundRequestedAt == nil || !current.RefundRequestedAt.Equal(*o.RefundRequestedAt) {
+		return nil, infraerrors.Conflict("REFUND_ATTEMPT_CHANGED", "refund request changed")
+	}
+	return s.settleTextRefund(ctx, tx, current, success)
+}
+
+func lockTextRefundOrder(ctx context.Context, tx *dbent.Tx, uid, oid int64) (*dbent.PaymentOrder, error) {
+	if err := lockTextBuyer(ctx, tx, uid); err != nil {
+		return nil, err
+	}
+	return tx.PaymentOrder.Query().Where(paymentorder.ID(oid)).ForUpdate().Only(ctx)
+}
+
+// The caller holds both the buyer and order locks and has validated the attempt.
+func (s *PaymentService) settleTextRefund(ctx context.Context, tx *dbent.Tx, o *dbent.PaymentOrder, success bool) (*RefundResult, error) {
+	lot, err := readRefundLot(ctx, tx.Client(), o.ID)
+	if err != nil {
+		return nil, err
 	}
 	if !lot.held {
 		return nil, infraerrors.Conflict("REFUND_RECONCILIATION_REQUIRED", "missing refund hold")
 	}
 	update := tx.PaymentOrder.UpdateOneID(o.ID)
+	result := &RefundResult{Success: success}
 	if success {
 		update.SetStatus(OrderStatusRefunded).SetRefundAt(time.Now())
 		if _, err = tx.ExecContext(ctx, "UPDATE redeem_codes SET status='disabled' WHERE id=(SELECT redeem_id FROM text_purchase_vouchers WHERE order_id=$1) AND status='unused'", o.ID); err != nil {
@@ -174,6 +233,7 @@ func (s *PaymentService) finishTextRefund(ctx context.Context, o *dbent.PaymentO
 		}
 	} else {
 		update.SetStatus(OrderStatusRefundFailed)
+		result.Warning = "provider_rejected"
 		if lot.redeemed.Valid {
 			if _, err = tx.ExecContext(ctx, "UPDATE users SET balance=balance+$1,updated_at=now() WHERE id=$2", o.Amount, o.UserID); err != nil {
 				return nil, err
@@ -192,7 +252,7 @@ func (s *PaymentService) finishTextRefund(ctx context.Context, o *dbent.PaymentO
 	if !success && lot.redeemed.Valid {
 		s.invalidateRefundBalanceCache(ctx, o.UserID)
 	}
-	return &RefundResult{Success: success}, nil
+	return result, nil
 }
 func (s *PaymentService) confirmTextRefundEvent(ctx context.Context, v textRefundEvent) error {
 	if v.ID == "" || v.Status != "succeeded" || v.Currency != "USD" || v.Transaction.ID == "" {
@@ -223,7 +283,7 @@ func (s *PaymentService) confirmTextRefundEvent(ctx context.Context, v textRefun
 	if o.ProviderSnapshot["mode"] != s.creemClient().mode || v.Amount != lot.cents || !lot.matchesRefund(v.Transaction) {
 		return infraerrors.Conflict("REFUND_MISMATCH", "refund does not match transaction")
 	}
-	_, err = s.finishTextRefund(ctx, o, lot, true)
+	_, err = s.finishTextRefund(ctx, o, true)
 	return err
 }
 func (lot textRefundLot) matchesRefund(t creemTransaction) bool {
@@ -240,16 +300,28 @@ func (s *PaymentService) queryTextRefund(ctx context.Context, o *dbent.PaymentOr
 	if err != nil {
 		return nil, err
 	}
-	var t creemTransaction
-	c := s.creemClient()
-	if o.ProviderSnapshot["mode"] != c.mode {
-		return nil, infraerrors.Conflict("CREEM_UNAVAILABLE", "wrong store mode")
-	}
-	if err = c.call(ctx, "GET", "/v1/transactions?transaction_id="+url.QueryEscape(lot.txID), nil, &t); err != nil {
+	t, err := s.textRefundTransaction(ctx, o, lot)
+	if err != nil {
 		return nil, err
 	}
 	if lot.matchesRefund(t) {
-		return s.finishTextRefund(ctx, o, lot, true)
+		return s.finishTextRefund(ctx, o, true)
+	}
+	if lot.matchesUnrefunded(t) {
+		return &RefundResult{Warning: "merchant_confirmation_required", TransactionID: lot.txID, RequestedAt: o.RefundRequestedAt}, nil
 	}
 	return &RefundResult{Warning: "pending"}, nil
+}
+
+func (lot textRefundLot) matchesUnrefunded(t creemTransaction) bool {
+	return t.ID == lot.txID && t.Order == lot.merchantOrder && t.Currency == "USD" && t.Status == "paid" && t.Paid == lot.cents && t.Refunded == 0
+}
+func (s *PaymentService) textRefundTransaction(ctx context.Context, o *dbent.PaymentOrder, lot textRefundLot) (creemTransaction, error) {
+	var t creemTransaction
+	c := s.creemClient()
+	if o.ProviderSnapshot["mode"] != c.mode {
+		return t, infraerrors.Conflict("CREEM_UNAVAILABLE", "wrong store mode")
+	}
+	err := c.call(ctx, "GET", "/v1/transactions?transaction_id="+url.QueryEscape(lot.txID), nil, &t)
+	return t, err
 }

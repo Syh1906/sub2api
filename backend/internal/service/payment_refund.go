@@ -217,7 +217,7 @@ func (s *PaymentService) PrepareRefund(ctx context.Context, oid int64, amt float
 		return nil, nil, infraerrors.NotFound("NOT_FOUND", "order not found")
 	}
 	if o.OrderType == TextVoucherOrder {
-		if amt != o.Amount || force || o.Status != OrderStatusRefundRequested {
+		if amt != o.Amount || force || (o.Status != OrderStatusRefundRequested && o.Status != OrderStatusRefunding) {
 			return nil, nil, infraerrors.Conflict("REFUND_INELIGIBLE", "only the full requested order is refundable")
 		}
 		return &RefundPlan{OrderID: oid, Order: o, RefundAmount: amt, Reason: reason}, nil, nil

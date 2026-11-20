@@ -17,6 +17,7 @@ var ErrUsageBillingRequestConflict = errors.New("usage billing request fingerpri
 
 // UsageBillingCommand describes one billable request that must be applied at most once.
 type UsageBillingCommand struct {
+	TextUsageTicket    string // Runtime admission, excluded from the stable billing fingerprint.
 	RequestID          string
 	APIKeyID           int64
 	RequestFingerprint string

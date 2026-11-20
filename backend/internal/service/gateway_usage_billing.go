@@ -379,6 +379,9 @@ func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog
 		return true, nil
 	}
 
+	if a := TextUsageAdmissionFromContext(ctx); a != nil && cmd.BalanceCost > 0 {
+		cmd.TextUsageTicket = a.ticket
+	}
 	applyCtx, cancelApply := detachedBillingContext(ctx)
 	result, err := repo.Apply(applyCtx, cmd)
 	cancelApply()

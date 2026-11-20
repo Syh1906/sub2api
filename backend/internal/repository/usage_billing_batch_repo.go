@@ -348,6 +348,21 @@ func applyUsageBillingBatchBalance(ctx context.Context, tx *sql.Tx, userID int64
 		return nil
 	}
 
+	var tickets []string
+	debits := make([]billingDebit, 0, len(group.indexes))
+	for _, i := range group.indexes {
+		cmd := cmds[i]
+		if cmd.TextUsageTicket != "" {
+			tickets = append(tickets, cmd.TextUsageTicket)
+		}
+		debits = append(debits, billingDebit{cmd.RequestID, cmd.APIKeyID, cmd.BalanceCost})
+	}
+	if err := checkTextUsageAdmissions(ctx, tx, userID, tickets); err != nil {
+		return err
+	}
+	if err := attachBillingDebits(ctx, tx, debits); err != nil {
+		return err
+	}
 	var newBalance decimal.Decimal
 	err := tx.QueryRowContext(ctx, `
 		UPDATE users

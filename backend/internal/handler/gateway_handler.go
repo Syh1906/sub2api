@@ -1042,6 +1042,16 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 							h.handleStreamingAwareError(c, status, code, message, streamStarted)
 							return
 						}
+						if subscription != nil && apiKey.Group != nil && apiKey.Group.IsSubscriptionType() {
+							fallbackCtx, release, err := h.billingCacheService.AdmitTextUsage(c.Request.Context(), fallbackAPIKey.User.ID)
+							if err != nil {
+								status, code, message, _ := billingErrorDetails(err)
+								h.handleStreamingAwareError(c, status, code, message, streamStarted)
+								return
+							}
+							defer release()
+							c.Request = c.Request.WithContext(fallbackCtx)
+						}
 						// 兜底重试按"直接请求兜底分组"处理：清除强制平台，允许按分组平台调度
 						ctx := context.WithValue(c.Request.Context(), ctxkey.ForcePlatform, "")
 						c.Request = c.Request.WithContext(ctx)
@@ -2573,6 +2583,10 @@ func (h *GatewayHandler) maybeLogCompatibilityFallbackMetrics(reqLog *zap.Logger
 
 func (h *GatewayHandler) submitUsageRecordTask(parent context.Context, task service.UsageRecordTask) {
 	if task == nil {
+		return
+	}
+	if service.TextUsageAdmissionFromContext(parent) != nil {
+		h.submitMandatoryUsageRecordTask(parent, task)
 		return
 	}
 	task, abandon := wrapUsageRecordTaskContext(parent, task)

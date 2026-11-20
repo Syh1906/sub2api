@@ -5,6 +5,7 @@ import (
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/adminaccess"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -68,7 +69,16 @@ func (h *PaymentHandler) ListOrders(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	response.Paginated(c, sanitizeAdminPaymentOrdersForResponse(orders), int64(total), page, pageSize)
+	summaries, err := h.paymentService.TextVoucherSummaries(c.Request.Context(), orders)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	items := sanitizeAdminPaymentOrdersForResponse(orders)
+	for i := range items {
+		items[i].Voucher = summaries[items[i].ID]
+	}
+	response.Paginated(c, items, int64(total), page, pageSize)
 }
 
 // GetOrderDetail returns detailed information about a single order.
@@ -91,6 +101,51 @@ func (h *PaymentHandler) GetOrderDetail(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"order": result, "auditLogs": auditLogs})
+}
+
+// GetOrderUsage lists the individual charges attributed to this order.
+func (h *PaymentHandler) GetOrderUsage(c *gin.Context) {
+	id, ok := parseIDParam(c, "id")
+	if !ok {
+		return
+	}
+	page, size := response.ParsePagination(c)
+	items, total, err := h.paymentService.AdminTextOrderUsage(c.Request.Context(), id, page, size)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Paginated(c, items, total, page, size)
+}
+
+func (h *PaymentHandler) ReconcileTextCheckout(c *gin.Context) {
+	id, ok := parseIDParam(c, "id")
+	if !ok {
+		return
+	}
+	var req struct {
+		CheckoutID          string `json:"checkout_id" binding:"max=200"`
+		NoCheckoutReference string `json:"no_checkout_reference" binding:"max=256"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Merchant checkout ID required")
+		return
+	}
+	var err error
+	switch {
+	case req.CheckoutID != "" && req.NoCheckoutReference == "":
+		err = h.paymentService.ReconcileTextCheckout(c.Request.Context(), id, req.CheckoutID, paymentOperator(c))
+	case req.CheckoutID == "" && req.NoCheckoutReference != "":
+		err = h.paymentService.CloseUnsentTextCheckout(c.Request.Context(), id, req.NoCheckoutReference, paymentOperator(c))
+	default:
+		response.BadRequest(c, "Provide one merchant checkout ID or confirmation of non-creation")
+		return
+	}
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "checkout reconciled"})
 }
 
 // CancelOrder cancels a pending order (admin).
@@ -123,6 +178,7 @@ func (h *PaymentHandler) RetryFulfillment(c *gin.Context) {
 }
 
 type AdminPaymentOrderResult struct {
+	CheckoutState       string                     `json:"checkout_state,omitempty"`
 	Voucher             *service.TextVoucherDetail `json:"voucher,omitempty"`
 	ID                  int64                      `json:"id"`
 	UserID              int64                      `json:"user_id"`
@@ -186,6 +242,7 @@ func sanitizeAdminPaymentOrderForResponse(order *dbent.PaymentOrder) *AdminPayme
 		code = ""
 	}
 	return &AdminPaymentOrderResult{
+		CheckoutState:       service.TextCheckoutState(order),
 		ID:                  order.ID,
 		UserID:              order.UserID,
 		UserEmail:           order.UserEmail,
@@ -279,6 +336,25 @@ func (h *PaymentHandler) QueryAndFinalizeRefund(c *gin.Context) {
 	}
 
 	result, err := h.paymentService.QueryAndFinalizeRefund(c.Request.Context(), orderID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, result)
+}
+
+// ResolveTextRefundFailure records an operator's final provider confirmation.
+func (h *PaymentHandler) ResolveTextRefundFailure(c *gin.Context) {
+	orderID, ok := parseIDParam(c, "id")
+	if !ok {
+		return
+	}
+	var evidence service.TextRefundFailureEvidence
+	if err := c.ShouldBindJSON(&evidence); err != nil {
+		response.BadRequest(c, "Invalid refund evidence")
+		return
+	}
+	result, err := h.paymentService.ResolveTextRefundFailure(c.Request.Context(), orderID, evidence, paymentOperator(c))
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -513,4 +589,11 @@ func (h *PaymentHandler) UpdateConfig(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"message": "updated"})
+}
+
+func paymentOperator(c *gin.Context) string {
+	if principal := adminaccess.FromContext(c.Request.Context()); principal != nil {
+		return "admin-key:" + principal.KeyID
+	}
+	return adminActorScope(c)
 }

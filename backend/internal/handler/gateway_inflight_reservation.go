@@ -40,7 +40,7 @@ func inflightNoop() {}
 // 成功时把预留句柄挂到 c.Request 的 context 上：之后通过 submit*UsageRecordTask 提交的
 // 计费任务会接管一个引用，直到余额缓存实际扣减后才释放。返回的 done 必须 defer 调用
 // （停止续期并归还 handler 引用；没有提交计费任务时即刻释放）。
-// 开关关闭、订阅模式、Redis 故障时返回 no-op（fail-open）；无法定价时默认 fail-open，
+// 文字余额请求另在数据库登记，防止异步扣费前将已兑订单退回。Redis 估算独立可选；无法定价时默认 fail-open，
 // 配置 fail_closed_on_unpriced=true 时返回 ErrInsufficientBalance。
 func reserveInflightBalance(
 	c *gin.Context,
@@ -71,10 +71,31 @@ func reserveInflightBalanceCtx(
 	subscription *service.UserSubscription,
 	req service.InflightEstimateRequest,
 ) (context.Context, func(), error) {
-	if billing == nil || estimator == nil || apiKey == nil || apiKey.User == nil || !billing.InflightReservationEnabled() {
+	if billing == nil || apiKey == nil || apiKey.User == nil {
 		return ctx, inflightNoop, nil
 	}
 	if apiKey.Group != nil && apiKey.Group.IsSubscriptionType() && subscription != nil {
+		return ctx, inflightNoop, nil
+	}
+	tracked := ctx
+	release := inflightNoop
+	var err error
+	if req.Kind == service.InflightEstimateToken || req.Kind == service.InflightEstimatePerRequest {
+		tracked, release, err = billing.AdmitTextUsage(ctx, apiKey.User.ID)
+		if err != nil {
+			return ctx, inflightNoop, err
+		}
+	}
+	reserved, done, err := reserveEstimatedBalance(tracked, billing, estimator, apiKey, subscription, req)
+	if err != nil {
+		release()
+		return ctx, inflightNoop, err
+	}
+	return reserved, func() { done(); release() }, nil
+}
+
+func reserveEstimatedBalance(ctx context.Context, billing *service.BillingCacheService, estimator inflightReservationEstimator, apiKey *service.APIKey, subscription *service.UserSubscription, req service.InflightEstimateRequest) (context.Context, func(), error) {
+	if estimator == nil || !billing.InflightReservationEnabled() {
 		return ctx, inflightNoop, nil
 	}
 	estimate, priced := estimator.EstimateInflightReservation(ctx, apiKey, req)
@@ -129,4 +150,25 @@ func grokVoiceInflightEstimate(endpoint string, body []byte) service.InflightEst
 		req.AudioUnits = float64(len(body)) / grokVoiceSTTBytesPerSecond / 3600
 	}
 	return req
+}
+
+// wrapUsageRecordTaskContext 包装计费任务：复制请求级 context 值，并接管请求的在途余额预留引用。
+// 返回的 abandon 在任务未被执行（被丢弃）时必须调用以归还预留引用；任务执行结束时（含 panic）
+// 自动归还，此时余额缓存已在计费路径中同步扣减。
+func wrapUsageRecordTaskContext(parent context.Context, task service.UsageRecordTask) (service.UsageRecordTask, func()) {
+	if task == nil {
+		return nil, func() {}
+	}
+	done := func() {}
+	if parent != nil {
+		done = service.InflightReservationFromContext(parent).Acquire()
+	}
+	admission := service.TextUsageAdmissionFromContext(parent)
+	releaseText := admission.HoldTask()
+	release := func() { done(); releaseText() }
+	requestContext := usageRecordContext(parent, context.Background())
+	return func(ctx context.Context) {
+		defer release()
+		task(admission.Bind(usageRecordContext(requestContext, ctx)))
+	}, release
 }

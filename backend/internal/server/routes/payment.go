@@ -54,9 +54,11 @@ func RegisterPaymentRoutes(
 			orders.POST("", paymentHandler.CreateOrder)
 			orders.POST("/verify", paymentHandler.VerifyOrder)
 			orders.GET("/purchase", paymentHandler.LookupPurchase)
+			orders.GET("/text-reference", paymentHandler.LookupTextReference)
 			orders.GET("/my", paymentHandler.GetMyOrders)
 			orders.GET("/:id", paymentHandler.GetOrder)
 			orders.GET("/:id/checkout", paymentHandler.ResumeCheckout)
+			orders.POST("/:id/checkout/continue", paymentHandler.ContinueTextCheckout)
 			orders.POST("/:id/cancel", paymentHandler.CancelOrder)
 			orders.POST("/:id/refund-request", paymentHandler.RequestRefund)
 			orders.GET("/refund-eligible-providers", paymentHandler.GetRefundEligibleProviders)
@@ -111,10 +113,13 @@ func RegisterPaymentRoutes(
 		{
 			adminOrders.GET("", adminPaymentHandler.ListOrders)
 			adminOrders.GET("/:id", adminPaymentHandler.GetOrderDetail)
+			adminOrders.GET("/:id/usage", adminPaymentHandler.GetOrderUsage)
 			adminOrders.POST("/:id/cancel", adminPaymentHandler.CancelOrder)
 			adminOrders.POST("/:id/retry", adminPaymentHandler.RetryFulfillment)
+			adminOrders.POST("/:id/checkout/reconcile", adminPaymentHandler.ReconcileTextCheckout)
 			adminOrders.POST("/:id/refund", adminPaymentHandler.ProcessRefund)
 			adminOrders.POST("/:id/refund/query", adminPaymentHandler.QueryAndFinalizeRefund)
+			adminOrders.POST("/:id/refund/resolve-failure", adminPaymentHandler.ResolveTextRefundFailure)
 		}
 
 		// Subscription Plans

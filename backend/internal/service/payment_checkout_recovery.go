@@ -48,6 +48,9 @@ func (s *PaymentService) findPurchase(ctx context.Context, req CreateOrderReques
 	if order.PurchaseRequestHash == nil || *order.PurchaseRequestHash != req.purchaseRequestHash {
 		return nil, infraerrors.Conflict("PURCHASE_KEY_CONFLICT", "purchase key already used for a different order")
 	}
+	if TextCheckoutState(order) == "ready" {
+		return s.startTextCheckout(ctx, order)
+	}
 	return s.checkoutForOrder(order)
 }
 
@@ -80,7 +83,7 @@ func (s *PaymentService) ResumeCheckout(ctx context.Context, id, userID int64) (
 
 func (s *PaymentService) checkoutForOrder(order *dbent.PaymentOrder) (*CreateOrderResponse, error) {
 	result := &CreateOrderResponse{
-		OrderID: order.ID, OutTradeNo: order.OutTradeNo,
+		CheckoutState: TextCheckoutState(order), OrderID: order.ID, OutTradeNo: order.OutTradeNo,
 		Amount: order.Amount, PayAmount: order.PayAmount,
 		BonusAmount: order.BonusAmount, FeeRate: order.FeeRate,
 		Currency: PaymentOrderCurrency(order), PaymentType: order.PaymentType,
@@ -90,7 +93,9 @@ func (s *PaymentService) checkoutForOrder(order *dbent.PaymentOrder) (*CreateOrd
 		return result, nil
 	}
 	if !order.ExpiresAt.After(time.Now()) {
-		result.Status = OrderStatusExpired
+		if result.CheckoutState != "needs_review" && result.CheckoutState != "waiting_payment" {
+			result.Status = OrderStatusExpired
+		}
 		return result, nil
 	}
 	if order.CheckoutCiphertext != nil {

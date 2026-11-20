@@ -364,7 +364,16 @@ func (h *PaymentHandler) GetMyOrders(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	response.Paginated(c, sanitizePaymentOrdersForResponse(orders), int64(total), page, pageSize)
+	summaries, err := h.paymentService.TextVoucherSummaries(c.Request.Context(), orders)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	items := sanitizePaymentOrdersForResponse(orders)
+	for i := range items {
+		items[i].Voucher = summaries[items[i].ID]
+	}
+	response.Paginated(c, items, int64(total), page, pageSize)
 }
 
 // GetOrder returns a single order for the authenticated user.
@@ -415,6 +424,40 @@ func (h *PaymentHandler) ResumeCheckout(c *gin.Context) {
 	}
 	c.Header("Cache-Control", "no-store")
 	response.Success(c, order)
+}
+
+// LookupTextReference resolves a merchant return from an older checkout without querying a provider.
+func (h *PaymentHandler) LookupTextReference(c *gin.Context) {
+	subject, ok := requireAuth(c)
+	if !ok {
+		return
+	}
+	id, err := h.paymentService.LookupTextReference(c.Request.Context(), subject.UserID, c.Query("request_id"))
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	response.Success(c, gin.H{"order_id": id})
+}
+
+func (h *PaymentHandler) ContinueTextCheckout(c *gin.Context) {
+	subject, ok := requireAuth(c)
+	if !ok {
+		return
+	}
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		response.BadRequest(c, "Invalid order ID")
+		return
+	}
+	result, err := h.paymentService.ContinueTextCheckout(c.Request.Context(), id, subject.UserID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	response.Success(c, result)
 }
 
 func (h *PaymentHandler) LookupPurchase(c *gin.Context) {
@@ -676,6 +719,7 @@ func isMobile(c *gin.Context) bool {
 }
 
 type PaymentOrderResult struct {
+	CheckoutState       string                     `json:"checkout_state,omitempty"`
 	Voucher             *service.TextVoucherDetail `json:"voucher,omitempty"`
 	CheckoutRecovery    bool                       `json:"checkout_recovery"`
 	ID                  int64                      `json:"id"`
@@ -717,6 +761,7 @@ func sanitizePaymentOrderForResponse(order *dbent.PaymentOrder) *PaymentOrderRes
 		return nil
 	}
 	return &PaymentOrderResult{
+		CheckoutState:       service.TextCheckoutState(order),
 		CheckoutRecovery:    true,
 		ID:                  order.ID,
 		UserID:              order.UserID,

@@ -91,6 +91,7 @@ type CreateOrderRequest struct {
 }
 
 type CreateOrderResponse struct {
+	CheckoutState                 string                          `json:"checkout_state,omitempty"`
 	OrderID                       int64                           `json:"order_id"`
 	Amount                        float64                         `json:"amount"`
 	PayAmount                     float64                         `json:"pay_amount"`
@@ -142,11 +143,13 @@ type RefundPlan struct {
 }
 
 type RefundResult struct {
-	Success         bool    `json:"success"`
-	Warning         string  `json:"warning,omitempty"`
-	RequireForce    bool    `json:"require_force,omitempty"`
-	BalanceDeducted float64 `json:"balance_deducted,omitempty"`
-	SubDaysDeducted int     `json:"subscription_days_deducted,omitempty"`
+	TransactionID   string     `json:"transaction_id,omitempty"`
+	RequestedAt     *time.Time `json:"requested_at,omitempty"`
+	Success         bool       `json:"success"`
+	Warning         string     `json:"warning,omitempty"`
+	RequireForce    bool       `json:"require_force,omitempty"`
+	BalanceDeducted float64    `json:"balance_deducted,omitempty"`
+	SubDaysDeducted int        `json:"subscription_days_deducted,omitempty"`
 }
 
 type DashboardStats struct {

@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
@@ -38,7 +37,7 @@ func (s *PaymentService) createTextOrder(ctx context.Context, req CreateOrderReq
 	if err = s.checkCancelRateLimit(ctx, req.UserID, cfg); err != nil {
 		return nil, err
 	}
-	sel := &payment.InstanceSelection{ProviderKey: "creem", Config: map[string]string{"product": c.products[tier], "mode": c.mode}}
+	sel := &payment.InstanceSelection{ProviderKey: "creem", Config: map[string]string{"product": c.products[tier], "mode": c.mode, "return_url": ret}}
 	o, err := s.createOrderInTx(ctx, req, user, nil, cfg, req.Amount, req.Amount, 0, req.Amount, 0, sel)
 	if err != nil {
 		if prior, lookupErr := s.findPurchase(ctx, req); prior != nil || lookupErr != nil {
@@ -46,35 +45,27 @@ func (s *PaymentService) createTextOrder(ctx context.Context, req CreateOrderReq
 		}
 		return nil, err
 	}
-	success, err := buildPaymentReturnURL(ret, o.ID, o.OutTradeNo, "")
-	if err != nil {
-		return nil, err
-	}
-	checkout, err := c.checkout(ctx, c.products[tier], o.OutTradeNo, success)
-	if err != nil {
-		return nil, err
-	}
-	// A verified webhook may already have completed this order.
-	_, err = s.entClient.PaymentOrder.Update().Where(paymentorder.ID(o.ID), paymentorder.StatusEQ(OrderStatusPending)).SetPayURL(checkout.URL).SetPaymentTradeNo(checkout.ID).Save(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return s.ResumeCheckout(ctx, o.ID, req.UserID)
+	return s.startTextCheckout(ctx, o)
+}
+
+func textRefundExpired(paidAt, at time.Time) bool {
+	return at.After(paidAt.Add(14 * 24 * time.Hour))
 }
 
 type textPaidOrder struct {
-	ID          string `json:"id"`
-	Product     string `json:"product"`
-	Currency    string `json:"currency"`
-	Amount      int64  `json:"amount"`
-	Subtotal    int64  `json:"sub_total"`
-	Paid        int64  `json:"amount_paid"`
-	Due         int64  `json:"amount_due"`
-	Tax         int64  `json:"tax_amount"`
-	Discount    int64  `json:"discount_amount"`
-	Status      string `json:"status"`
-	Type        string `json:"type"`
-	Transaction string `json:"transaction"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	ID          string    `json:"id"`
+	Product     string    `json:"product"`
+	Currency    string    `json:"currency"`
+	Amount      int64     `json:"amount"`
+	Subtotal    int64     `json:"sub_total"`
+	Paid        int64     `json:"amount_paid"`
+	Due         int64     `json:"amount_due"`
+	Tax         int64     `json:"tax_amount"`
+	Discount    int64     `json:"discount_amount"`
+	Status      string    `json:"status"`
+	Type        string    `json:"type"`
+	Transaction string    `json:"transaction"`
 }
 type textPaymentEvent struct {
 	ID      string        `json:"id"`
@@ -143,14 +134,31 @@ func (s *PaymentService) deliverTextPurchase(ctx context.Context, event textPaym
 	if !correctProduct || !correctAmount || !paid || !checkoutMatches || o.ProviderSnapshot["mode"] != s.creemClient().mode {
 		return infraerrors.Conflict("PAYMENT_MISMATCH", "checkout does not match the purchased product")
 	}
+	// The signed checkout.completed snapshot contains the paid order's update time.
+	// A manually resent event has a new envelope timestamp.
+	now := time.Now()
+	if ord.UpdatedAt.IsZero() || ord.UpdatedAt.After(now) {
+		return infraerrors.Conflict("PAYMENT_TIME_UNVERIFIED", "missing or future paid order timestamp")
+	}
 	if o.PaidAt != nil {
 		rows, err := tx.QueryContext(ctx, "SELECT 1 FROM text_purchase_vouchers WHERE order_id=$1 AND transaction_id=$2 AND merchant_order_id=$3 AND paid_cents=$4", o.ID, ord.Transaction, ord.ID, ord.Paid)
 		if err != nil {
 			return err
 		}
-		defer func() { _ = rows.Close() }()
-		if !rows.Next() {
+		matched := rows.Next()
+		if err = rows.Close(); err != nil {
+			return err
+		}
+		if !matched {
 			return infraerrors.Conflict("PAYMENT_MISMATCH", "payment already fulfilled by another transaction")
+		}
+		// Earlier releases used the local fulfillment time. A matching replay may
+		// correct it backwards but can never extend the refund period.
+		if o.CompletedAt != nil && o.PaidAt.Equal(*o.CompletedAt) && ord.UpdatedAt.Before(*o.PaidAt) {
+			if err = tx.PaymentOrder.UpdateOneID(o.ID).SetPaidAt(ord.UpdatedAt).Exec(ctx); err != nil {
+				return err
+			}
+			return tx.Commit()
 		}
 		return nil
 	}
@@ -170,62 +178,13 @@ func (s *PaymentService) deliverTextPurchase(ctx context.Context, event textPaym
 	if err != nil {
 		return err
 	}
-	now := time.Now()
-	_, err = tx.PaymentOrder.UpdateOneID(o.ID).SetPaidAt(now).SetCompletedAt(now).SetStatus(OrderStatusCompleted).SetPaymentTradeNo(event.ID).SetPayAmount(float64(ord.Paid) / 100).ClearPayURL().SetRechargeCode(code).Save(ctx)
+	_, err = tx.PaymentOrder.UpdateOneID(o.ID).SetPaidAt(ord.UpdatedAt).SetCompletedAt(now).SetStatus(OrderStatusCompleted).SetPaymentTradeNo(event.ID).SetPayAmount(float64(ord.Paid) / 100).ClearPayURL().SetRechargeCode(code).Save(ctx)
 	if err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
-type TextVoucherDetail struct {
-	Code           string     `json:"code,omitempty"`
-	RedeemedAt     *time.Time `json:"redeemed_at,omitempty"`
-	Spent          float64    `json:"spent"`
-	Remaining      float64    `json:"remaining"`
-	RefundEligible bool       `json:"refund_eligible"`
-	Reason         string     `json:"reason,omitempty"`
-}
-
-func (s *PaymentService) TextDetail(ctx context.Context, o *dbent.PaymentOrder, owner bool) (*TextVoucherDetail, error) {
-	if o.OrderType != TextVoucherOrder {
-		return nil, nil
-	}
-	d := &TextVoucherDetail{Reason: "unpaid"}
-	if o.PaidAt == nil {
-		return d, nil
-	}
-	rows, err := s.entClient.QueryContext(ctx, "SELECT redeemed_at,spent,points-spent,refund_hold FROM text_purchase_vouchers WHERE order_id=$1", o.ID)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	if !rows.Next() {
-		return nil, fmt.Errorf("missing voucher record")
-	}
-	var held bool
-	if err = rows.Scan(&d.RedeemedAt, &d.Spent, &d.Remaining, &held); err != nil {
-		return nil, err
-	}
-	if held || o.Status == OrderStatusRefunded {
-		d.Remaining = 0
-		d.Reason = "refund"
-		return d, nil
-	}
-	if owner && d.RedeemedAt == nil {
-		d.Code = o.RechargeCode
-	}
-	switch {
-	case d.Spent > 0:
-		d.Reason = "spent"
-	case time.Now().After(o.PaidAt.Add(14 * 24 * time.Hour)):
-		d.Reason = "expired"
-	default:
-		d.Reason = ""
-		d.RefundEligible = o.Status == OrderStatusCompleted || o.Status == OrderStatusRefundFailed
-	}
-	return d, nil
-}
 func lockTextBuyer(ctx context.Context, tx *dbent.Tx, id int64) error {
 	rows, err := tx.QueryContext(ctx, "SELECT id FROM users WHERE id=$1 AND deleted_at IS NULL FOR UPDATE", id)
 	if err != nil {

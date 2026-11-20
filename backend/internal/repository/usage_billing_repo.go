@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"strings"
 
@@ -179,6 +180,15 @@ func (r *usageBillingRepository) applyUsageBillingEffects(ctx context.Context, t
 	}
 
 	if cmd.BalanceCost > 0 {
+		if cmd.TextUsageTicket != "" {
+			if err := checkTextUsageAdmissions(ctx, tx, cmd.UserID, []string{cmd.TextUsageTicket}); err != nil {
+				return err
+			}
+		}
+		debit := billingDebit{cmd.RequestID, cmd.APIKeyID, cmd.BalanceCost}
+		if err := attachBillingDebits(ctx, tx, []billingDebit{debit}); err != nil {
+			return err
+		}
 		newBalance, sufficient, err := deductUsageBillingBalance(ctx, tx, cmd.UserID, cmd.BalanceCost)
 		if err != nil {
 			return err
@@ -240,6 +250,23 @@ func incrementUsageBillingSubscription(ctx context.Context, tx *sql.Tx, subscrip
 		return nil
 	}
 	return service.ErrSubscriptionNotFound
+}
+
+type billingDebit struct {
+	RequestID string  `json:"request_id"`
+	APIKeyID  int64   `json:"api_key_id"`
+	Cost      float64 `json:"cost"`
+}
+
+// attachBillingDebits labels the balance update with the newly claimed debits.
+// PostgreSQL clears the setting at transaction end, including rollback.
+func attachBillingDebits(ctx context.Context, tx *sql.Tx, debits []billingDebit) error {
+	payload, err := json.Marshal(debits)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, "SELECT set_config('sub2api.billing_requests', $1, true)", string(payload))
+	return err
 }
 
 func deductUsageBillingBalance(ctx context.Context, tx *sql.Tx, userID int64, amount float64) (float64, bool, error) {
@@ -307,6 +334,12 @@ func captureUsageBillingBatchImageBalance(ctx context.Context, tx *sql.Tx, cmd *
 	}
 	if cmd.ActualAmount-cmd.HoldAmount > 0.00000001 {
 		return nil, service.ErrBatchImageSettlementCostExceedsHold
+	}
+	if cmd.ActualAmount > 0 {
+		debit := billingDebit{cmd.RequestID, cmd.APIKeyID, cmd.ActualAmount}
+		if err := attachBillingDebits(ctx, tx, []billingDebit{debit}); err != nil {
+			return nil, err
+		}
 	}
 	var balance, frozen float64
 	err := tx.QueryRowContext(ctx, `
