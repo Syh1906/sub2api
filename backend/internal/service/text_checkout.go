@@ -191,7 +191,7 @@ func (s *PaymentService) ReconcileTextCheckout(ctx context.Context, id int64, ch
 			update.SetStatus(OrderStatusExpired)
 			break
 		}
-		if !remote.creemCheckout.validURL() {
+		if !remote.validURL() {
 			return infraerrors.Conflict("CHECKOUT_UNAVAILABLE", "invalid merchant checkout URL")
 		}
 		update.SetPayURL(remote.URL)
