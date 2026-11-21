@@ -17,6 +17,10 @@
 
 本次只完成源码与Git历史同步，未构建、发布或部署，也未执行数据库迁移。同步内容含上游新增迁移源码，运行环境升级前仍需按实际版本验证迁移、接口和数据保留，不能把同步成功等同于业务验收。
 
+## Creem 全额退款通知
+
+退款成功通知有时附带付款时的交易快照，状态仍是 `paid`。此时服务按原交易号向 Creem 查询，核对订单号、币种、实付和全额退款金额后结清。商户尚未确认全额退回时保留待核账状态。同一通知在退款结清后重复送达，不会再次调整积分。[退款处理](../backend/internal/service/text_purchase_refund.go) · [回归用例](../backend/internal/payment/integration/text_purchase_postgres_test.go)
+
 ## CI 运行平台
 
 推送、拉取请求和使用默认选项手动运行 [CI](../.github/workflows/backend-ci.yml) 时，作业使用 Linux 运行机。通用部署检查覆盖 Docker Compose 安全配置、网关环境变量、容器运行资源和 Caddy 缓存配置。

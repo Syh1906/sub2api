@@ -216,7 +216,17 @@ func TestTextPurchasePostgres(t *testing.T) {
 	refund(c)
 	require.Equal(t, service.OrderStatusRefundPending, ent.PaymentOrder.GetX(ctx, c.ID).Status)
 	event := map[string]any{"id": "ref_fixture", "status": "succeeded", "refund_currency": "USD", "refund_amount": 5000, "transaction": map[string]any{"id": "tran_" + c.OutTradeNo, "order": "ord_" + c.OutTradeNo, "amount_paid": 5000, "refunded_amount": 5000, "currency": "USD", "status": "refunded"}}
+	transaction := event["transaction"].(map[string]any)
+	transaction["status"], transaction["refunded_amount"] = "paid", nil
+	queryTransaction = map[string]any{"id": transaction["id"], "order": transaction["order"], "amount_paid": 5000, "currency": "USD", "status": "paid"}
+	require.Error(t, send("refund.created", event, true))
+	require.Equal(t, service.OrderStatusRefundPending, ent.PaymentOrder.GetX(ctx, c.ID).Status)
+	queryTransaction["status"], queryTransaction["refunded_amount"] = "refunded", 5000
 	require.NoError(t, send("refund.created", event, true))
+	require.Equal(t, service.OrderStatusRefunded, ent.PaymentOrder.GetX(ctx, c.ID).Status)
+	queryTransaction = nil // A duplicate need not contact the merchant after settlement.
+	require.NoError(t, send("refund.created", event, true))
+	transaction["status"], transaction["refunded_amount"] = "refunded", 5000
 	require.NoError(t, send("refund.created", event, true))
 	_, err = redeem.Redeem(ctx, u.ID, cc)
 	require.Error(t, err)

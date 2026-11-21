@@ -280,7 +280,22 @@ func (s *PaymentService) confirmTextRefundEvent(ctx context.Context, v textRefun
 	if err != nil {
 		return err
 	}
-	if o.ProviderSnapshot["mode"] != s.creemClient().mode || v.Amount != lot.cents || !lot.matchesRefund(v.Transaction) {
+	if o.ProviderSnapshot["mode"] != s.creemClient().mode || v.Amount != lot.cents {
+		return infraerrors.Conflict("REFUND_MISMATCH", "refund does not match transaction")
+	}
+	transaction := v.Transaction
+	// A succeeded refund may embed the payment snapshot taken before the refund.
+	// Verify the current original transaction before releasing the refund hold.
+	if lot.matchesUnrefunded(transaction) {
+		if o.Status == OrderStatusRefunded {
+			return nil
+		}
+		transaction, err = s.textRefundTransaction(ctx, o, lot)
+		if err != nil {
+			return err
+		}
+	}
+	if !lot.matchesRefund(transaction) {
 		return infraerrors.Conflict("REFUND_MISMATCH", "refund does not match transaction")
 	}
 	_, err = s.finishTextRefund(ctx, o, true)
